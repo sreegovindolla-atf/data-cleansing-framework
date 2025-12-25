@@ -6,6 +6,7 @@ import os
 import json
 import argparse
 from pathlib import Path
+import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -37,35 +38,32 @@ OUT_JSON  = RUN_OUTPUT_DIR / f"{RUN_ID}_combined_extraction_results.json"
 
 
 # -----------------------
-# input texts
+# load input texts from CSV
 # -----------------------
-input_texts = [
-    "Construction a residential village and houses for poor people + distribution 250 food package, for poor families, it contains of rice, sugar, oil, sauce and pasta.",
-    "Construction classes for memorizing the Quran + Sponsorship 2 episodes for students to memorizing the Quran.",
-    "Construction of (2) Schools + maintenance of (9) schools with four attached offices ",
-    "Construction of a hospital in Hrjessea + Berbera",
-    "Reconstruction of the first phase of the port of Mukalla / hospitals / electricity / water (July 2016: renovating and furnishing Radio Mukalla (150,995.46) AED + renovating and furnishing Mukalla Court (134.260) AED + rebuilding and rehabilitation of the ",
-    "Founded in 2015, Grassland Cameroon is a private limited liability social enterprise providing rural agricultural finance to smallholder farmers while enhancing local food supply chains.  It delivers a combination of asset-based finance, extension services, and post harvest support to rural maize farmers in Cameroon. These innovative financial and training tools have enabled the farmers to increase their yields, and as a result, improve their livelihoods. ",
-    "Send a land convoy of 15-5 (3) truck to Jordan moved 75 tons blankets and food items as follows: Cardboard pass 62 310 2077 10385 UAE and Saudi, Quilt 1 × 10 66 990 13200 Bendel Emirati, Cardboard pass 22 896 477 3816 UAE and Saudi, Quilt 1 × 10 961 440 ",
-    "WFP e-voucher programme : For nearly 17,000 vulnerable Palestinians, mostly women, children and elderly, TBHF & WFP have partnered to provide vital food assistance that keeps hope alive.",
-    "Dispatching the twentieth ship via Al Fujairah harbour to transport (10,000) food parcels + school stationery+ school bags + toothbrushes",
-    "Dispatching the twenty-second ship to transport (847) tons, including 13,000 food parcels + 1000 tents + 300 tons of flour + 126 tons of dates  ",
-    "Artesian well with electric pump 1000 liter water tank | Beneficiaries: 500 people Depth from 200 meters | Shelf life is 15 years",
-    "Distribution of (1060) food basket from Najjar complex warehouse and logistic operations of the team in the governorates Hadramout / Marib / Mahra / Shabwa",
-    "Emergency Response - Food Boxes to support 1,195,746 beneficiaries in Gaza (WFP-1st Payment-Gaza)",
-    " Ensure availability of improved sanitation facilities in schools with sustainable Operations and Management mechanisms. WSUP will construct/rehabilitate improved, gender-sensitive sanitation facilities in 125 schools.  1. 87,500 children have access to i",
-    "A student housing, with an area of 133 m 2, with a zinc roof and reinforced concrete construction. The residence consists of 5 rooms for accommodation, a study room, a shower place, toilets, and a lobby. Making all plumbing and electrical installation",
-    "An amount of 16,346 euros, equivalent to 65,572 dirhams, is allocated to support the game park project, clause to remove rubble, prepare the land for construction, and buy new playground cribs",
-    "Completion of the construction of a school consisting of 3 classrooms made of bricks with a zinc roof + furnishing to accommodate 120 students - area 150 square meters in the village of Vuluga Umea Primary School",
-    "Construction and maintenance of (16) classes for the school of Hassassa - Shabwa governorate ",
-    "Construction of 4 new community schools in Senegal in partnership with BuildOn to benefit 60 students per school (with 50% girls enrolment) and literacy program for adults to benefit 240 illiterate women (60 women per school). 1. Increase access to educat",
-    "Construction of a mosque that can accommodate 180 worshipers - area of 120 square meters - foundation of reinforced concrete, construction of bricks, roof of reinforced concrete - floors of ceramic + construction of 8 ablution seats with a zinc roof + 3 b",
-    "Construction of field hospital in Conakry (Mohammed bin Zayed Hospital) containing 200 beds to treat people infected with COVID-19 in Guinea Conakry, containing all medical equipment and medicines."
-]
+INPUT_CSV = Path("data/input/denorm_mastertable.csv")
+
+if not INPUT_CSV.exists():
+    raise FileNotFoundError(f"Input CSV not found: {INPUT_CSV}")
+
+df_input = pd.read_csv(INPUT_CSV)
+
+if "ProjectTitleEnglish" not in df_input.columns:
+    raise ValueError("Column 'ProjectTitleEnglish' not found in input CSV")
+
+# Clean + prepare input texts
+input_texts = (
+    df_input["ProjectTitleEnglish"]
+    .dropna()
+    .astype(str)
+    .str.strip()
+)
+
+# Remove empty strings after stripping
+input_texts = [t for t in input_texts if t]
+
 
 # Combined examples
 EXAMPLES = INFRA_EXAMPLES + DIST_EXAMPLES
-
 
 # -----------------------
 # extraction loop (ONE prompt, ONE pass)
