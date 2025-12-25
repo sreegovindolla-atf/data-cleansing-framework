@@ -1,1 +1,17 @@
+# Secrets
 .env
+
+# Input / output data
+data/input/*
+data/outputs/*
+*.csv
+*.jsonl
+*.html
+
+# Python
+__pycache__/
+*.pyc
+
+# Examples
+config/examples/*
+config/__init__.py
