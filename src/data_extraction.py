@@ -53,6 +53,14 @@ input_texts = [
     "Artesian well with electric pump 1000 liter water tank | Beneficiaries: 500 people Depth from 200 meters | Shelf life is 15 years",
     "Distribution of (1060) food basket from Najjar complex warehouse and logistic operations of the team in the governorates Hadramout / Marib / Mahra / Shabwa",
     "Emergency Response - Food Boxes to support 1,195,746 beneficiaries in Gaza (WFP-1st Payment-Gaza)",
+    " Ensure availability of improved sanitation facilities in schools with sustainable Operations and Management mechanisms. WSUP will construct/rehabilitate improved, gender-sensitive sanitation facilities in 125 schools.  1. 87,500 children have access to i",
+    "A student housing, with an area of 133 m 2, with a zinc roof and reinforced concrete construction. The residence consists of 5 rooms for accommodation, a study room, a shower place, toilets, and a lobby. Making all plumbing and electrical installation",
+    "An amount of 16,346 euros, equivalent to 65,572 dirhams, is allocated to support the game park project, clause to remove rubble, prepare the land for construction, and buy new playground cribs",
+    "Completion of the construction of a school consisting of 3 classrooms made of bricks with a zinc roof + furnishing to accommodate 120 students - area 150 square meters in the village of Vuluga Umea Primary School",
+    "Construction and maintenance of (16) classes for the school of Hassassa - Shabwa governorate ",
+    "Construction of 4 new community schools in Senegal in partnership with BuildOn to benefit 60 students per school (with 50% girls enrolment) and literacy program for adults to benefit 240 illiterate women (60 women per school). 1. Increase access to educat",
+    "Construction of a mosque that can accommodate 180 worshipers - area of 120 square meters - foundation of reinforced concrete, construction of bricks, roof of reinforced concrete - floors of ceramic + construction of 8 ablution seats with a zinc roof + 3 b",
+    "Construction of field hospital in Conakry (Mohammed bin Zayed Hospital) containing 200 beds to treat people infected with COVID-19 in Guinea Conakry, containing all medical equipment and medicines."
 ]
 
 # Combined examples

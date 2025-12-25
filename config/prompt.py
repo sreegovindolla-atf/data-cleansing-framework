@@ -115,19 +115,24 @@ CRITICAL RULES:
     - When multiple items are listed and some are tangible while others are intangible,
       extract ONLY the tangible assets and omit the intangible ones.
 
-3) Do NOT extract components when a parent package/kit is present:
-   - If the text explicitly mentions a parent container such as a package/basket/kit/parcel (e.g., "food package", "food basket", "winter package", "hygiene kit", "relief kit", "food parcel"),
-     and then lists its contents (e.g., in parentheses or after words like "contains", "including", "consisting of", "composed of", "includes"),
+3) Beneficiary count extraction rules:
+    - If beneficiary_count is expressed as “X per [unit]” (e.g., “60 students per school”) 
+    and the text states the number of those units (e.g., “4 schools”), 
+    then output the total beneficiaries as X × number_of_units (e.g., 60×4 = 240)
+
+4) Do NOT extract components when a parent package/kit is present:
+   - If the text explicitly mentions a parent container such as a package/basket/kit/parcel/mosque/school/hospital (e.g., "food package", "food basket", "winter package", "hygiene kit", "relief kit", "food parcel", "a mosque", "a school", "a hospital"),
+     and then lists its contents (e.g., in parentheses or after words like "contains", "including", "consisting of", "composed of", "includes", "containing", "construction of"),
      THEN extract ONLY the parent container as the asset.
-   - Do NOT extract the listed contents/items (e.g., rice, sugar, oil, pasta, sauce, flour, salt, tea, etc.) as separate assets in that case.
+   - Do NOT extract the listed contents/items (e.g., rice, sugar, oil, pasta, sauce, flour, salt, tea, ablution seat, beds, rooms, etc.) as separate assets in that case.
    - Exception: If the contents are explicitly stated as separate deliveries outside the package (e.g., "food package + rice + sugar distributed separately"),
      then you may extract them separately.
 
-4) When to extract individual items:
-   - If there is NO parent container mentioned (no package/basket/kit/parcel), and the text lists items being delivered (e.g., "distributed rice, sugar, oil"),
+5) When to extract individual items:
+   - If there is NO parent container mentioned (no package/basket/kit/parcel/hospital/mosque/school), and the text lists items being delivered (e.g., "distributed rice, sugar, oil, constructed ablution seats, beds, rooms"),
      then extract each item as its own asset (with quantities/uom if present).
 
-5) Output format:
+6) Output format:
    - extraction_text MUST be a string, integer, or float (never null, never a list/dict).
    - If a field is not explicitly present, DO NOT output an extraction for it.
    - Do not use attributes for now (leave attributes empty).
