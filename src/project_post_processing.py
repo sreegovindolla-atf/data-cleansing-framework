@@ -37,6 +37,15 @@ def normalize_class(name: str) -> str:
         return ""
     return re.sub(r"\s+", "_", name.strip().lower())
 
+# Function to build master project code in format 'MP-<4digit number>'
+def fmt_mp(n: int) -> str:
+    return f"MP-{n:04d}"
+
+# Function to build project code in format '# PRJ-<MP code>-<3digit number>'
+def fmt_prj(mp_code: str, n: int) -> str:
+    return f"PRJ-{mp_code}-{n:03d}"
+
+
 def build_project_rows(doc: dict) -> list[dict]:
     """
     One input_text (master) can contain multiple project_title extractions.
@@ -117,6 +126,57 @@ for c in COLUMNS:
     if c not in df.columns:
         df[c] = None
 df = df[COLUMNS]
+
+# -------------------------------
+# Add codes (post-processing)
+# -------------------------------
+# 1) Master project code: MP-0001, MP-0002, ... (based on unique master_project_title)
+#    If master_project_title is missing, we treat it as its own group per input_text
+#    so that codes are still generated deterministically.
+df["_mp_group_key"] = df["master_project_title"]
+missing_mp = df["_mp_group_key"].isna() | (df["_mp_group_key"].astype(str).str.strip() == "")
+df.loc[missing_mp, "_mp_group_key"] = df.loc[missing_mp, "input_text"].fillna("").astype(str)
+
+# Stable ordering for code assignment (so reruns produce same numbering for same content/order)
+mp_keys_in_order = []
+seen = set()
+for k in df["_mp_group_key"].tolist():
+    if k not in seen:
+        seen.add(k)
+        mp_keys_in_order.append(k)
+
+mp_code_map = {k: fmt_mp(i + 1) for i, k in enumerate(mp_keys_in_order)}
+df["master_project_code"] = df["_mp_group_key"].map(mp_code_map)
+
+# 2) Project code: PRJ-<MP code>-001, -002, ... per master_project_code
+#    Only generate for rows with a real project_title; keep None otherwise.
+df["_has_project"] = df["project_title"].notna() & (df["project_title"].astype(str).str.strip() != "")
+df["_prj_seq"] = (
+    df[df["_has_project"]]
+      .groupby("master_project_code")
+      .cumcount()
+      .add(1)
+      .reindex(df.index)
+)
+
+df["project_code"] = None
+df.loc[df["_has_project"], "project_code"] = df.loc[df["_has_project"]].apply(
+    lambda r: fmt_prj(r["master_project_code"], int(r["_prj_seq"])),
+    axis=1
+)
+
+# cleanup temp cols
+df.drop(columns=["_mp_group_key", "_has_project", "_prj_seq"], inplace=True)
+
+# final column order
+FINAL_COLUMNS = [
+    "input_text",
+    "master_project_code",
+    "master_project_title",
+    "project_code",
+    "project_title",
+]
+df = df[FINAL_COLUMNS]
 
 df.to_csv(OUTPUT_CSV, index=False)
 print(f"Saved: {OUTPUT_CSV}")
