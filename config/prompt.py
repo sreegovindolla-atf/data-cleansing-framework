@@ -136,4 +136,17 @@ CRITICAL RULES:
    - extraction_text MUST be a string, integer, or float (never null, never a list/dict).
    - If a field is not explicitly present, DO NOT output an extraction for it.
    - Do not use attributes for now (leave attributes empty).
+    - Return ONLY valid JSON (no markdown, no commentary).
+    - The top-level JSON MUST have exactly these keys:
+      - "text": the original input text (string)
+      - "extractions": a list of objects
+
+    Each item in "extractions" MUST be an object with:
+    - "extraction_class": string
+    - "extraction_text": string or number (never null, never list/dict)
+    - "extraction_index": integer (order in which you found it; start at 0 and increment)
+
+    If nothing is found, return:
+    {"text":"<original input>","extractions":[]}
+
 """)

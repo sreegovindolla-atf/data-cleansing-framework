@@ -46,7 +46,7 @@ def to_int_or_none(val):
     return int(m.group(0)) if m else None
 
 def fmt_mp(n: int) -> str:
-    return f"MP-{n:04d}"
+    return f"MP-{n:06d}"   # widened so you can go beyond 9999 safely
 
 def fmt_prj(mp_code: str, n: int) -> str:
     return f"PRJ-{mp_code}-{n:03d}"
@@ -54,19 +54,22 @@ def fmt_prj(mp_code: str, n: int) -> str:
 # -----------------------
 # main parsing
 # -----------------------
+if not INPUT_JSONL.exists():
+    raise FileNotFoundError(f"Input JSONL not found: {INPUT_JSONL}")
+
 rows = []
 
-master_project_counter = 0
-master_project_map = {}  # mp_key -> MP-0001
-
 with open(INPUT_JSONL, "r", encoding="utf-8") as f:
-    for doc_index, line in enumerate(f):
+    for doc_index, line in enumerate(f, start=1):  # start=1 => MP-000001 corresponds to first doc
         line = line.strip()
         if not line:
             continue
 
         doc = json.loads(line)
         text = doc.get("text")
+
+        # Each JSONL row is a unique master project, regardless of title
+        master_project_code = fmt_mp(doc_index)
 
         # normalize + sort extractions
         exs = []
@@ -78,18 +81,12 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
             exs.append({"cls": cls, "val": val, "idx": e.get("extraction_index", 10**9)})
         exs.sort(key=lambda x: x["idx"])
 
-        # ---- master project ----
+        # ---- master project title (optional) ----
         master_project_title = None
         for x in exs:
             if x["cls"] == "master_project_title":
                 master_project_title = smart_title_case(x["val"])
                 break
-
-        mp_key = master_project_title or (text or "")
-        if mp_key not in master_project_map:
-            master_project_counter += 1
-            master_project_map[mp_key] = fmt_mp(master_project_counter)
-        master_project_code = master_project_map[mp_key]
 
         # ---- beneficiary storage ----
         # global (doc-level) fallback
@@ -100,7 +97,7 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
         project_ben = {}  # project_code -> {"beneficiary_count":..., "beneficiary_group_name":...}
 
         # ---- iterate and build combined rows ----
-        project_counter_per_mp = 0
+        project_counter = 0
         current_project_code = None
         current_project_title = None
 
@@ -111,6 +108,18 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
         projects_with_assets = set()
         seen_projects_in_doc = []  # [(project_code, project_title)]
 
+        def get_ben(prj_code):
+            bc = None
+            bg = None
+            if prj_code in project_ben:
+                bc = project_ben[prj_code].get("beneficiary_count")
+                bg = project_ben[prj_code].get("beneficiary_group_name")
+            if bc is None:
+                bc = global_ben_count
+            if bg is None:
+                bg = global_ben_group
+            return bc, bg
+
         for x in exs:
             cls, val = x["cls"], x["val"]
 
@@ -118,18 +127,17 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
             # project boundary
             # -------------------------
             if cls == "project_title":
-                # flush any open asset row
+                # flush any open asset row before switching project
                 if current_asset is not None:
                     rows.append(current_asset)
                     projects_with_assets.add(current_asset["project_code"])
                     current_asset = None
 
-                project_counter_per_mp += 1
+                project_counter += 1
                 current_project_title = smart_title_case(val)
-                current_project_code = fmt_prj(master_project_code, project_counter_per_mp)
+                current_project_code = fmt_prj(master_project_code, project_counter)
                 seen_projects_in_doc.append((current_project_code, current_project_title))
 
-                # init beneficiary bucket for this project
                 project_ben[current_project_code] = {
                     "beneficiary_count": None,
                     "beneficiary_group_name": None,
@@ -140,8 +148,7 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                 continue
 
             # -------------------------
-            # beneficiaries
-            # (project-specific if we are inside a project; else global fallback)
+            # beneficiaries (project-specific if within a project; else global)
             # -------------------------
             if cls == "beneficiary_count":
                 b = to_int_or_none(val)
@@ -163,19 +170,6 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                         global_ben_group = g
                 continue
 
-            # helper: get beneficiary values for current project (with fallback)
-            def _get_ben(prj_code):
-                bc = None
-                bg = None
-                if prj_code in project_ben:
-                    bc = project_ben[prj_code].get("beneficiary_count")
-                    bg = project_ben[prj_code].get("beneficiary_group_name")
-                if bc is None:
-                    bc = global_ben_count
-                if bg is None:
-                    bg = global_ben_group
-                return bc, bg
-
             # -------------------------
             # assets
             # -------------------------
@@ -186,7 +180,7 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                     projects_with_assets.add(current_asset["project_code"])
                     current_asset = None
 
-                ben_count, ben_group = _get_ben(current_project_code)
+                ben_count, ben_group = get_ben(current_project_code)
 
                 current_asset = {
                     "master_project_code": master_project_code,
@@ -233,10 +227,20 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
             projects_with_assets.add(current_asset["project_code"])
             current_asset = None
 
+        # If no project_title was extracted at all, create a stub "project"
+        # so every master project has at least one project_code.
+        if not seen_projects_in_doc:
+            project_counter = 1
+            current_project_code = fmt_prj(master_project_code, project_counter)
+            seen_projects_in_doc.append((current_project_code, None))
+            project_ben[current_project_code] = {
+                "beneficiary_count": global_ben_count,
+                "beneficiary_group_name": global_ben_group,
+            }
+
         # emit stub rows for projects with no assets
         for prj_code, prj_title in seen_projects_in_doc:
             if prj_code not in projects_with_assets:
-                # beneficiary fallback resolution
                 bc = project_ben.get(prj_code, {}).get("beneficiary_count")
                 bg = project_ben.get(prj_code, {}).get("beneficiary_group_name")
                 if bc is None:
