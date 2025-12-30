@@ -62,7 +62,7 @@ engine = get_sql_server_engine()
 # =====================================
 SOURCE_QUERY = """
 SELECT TOP 10
-    ProjectTitleEnglish
+    ProjectTitleEnglish + '; Description: ' + DescriptionEnglish   AS ProjectTitleEnglish
 FROM dbo.denorm_MasterTable
 """
 

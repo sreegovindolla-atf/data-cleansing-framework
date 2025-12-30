@@ -63,7 +63,21 @@ Mandatory fields:
 - master_project_title  
 - project_title
 
+==================================================
+INPUT STRUCTURE (CRITICAL – READ CAREFULLY):
+==================================================
+
+- The input text ALWAYS follows this structure:
+
+<Project Title>; Description: <Project Description>
+
+- The text BEFORE "; Description:" is the TITLE SECTION
+- The text AFTER  "; Description:" is the DESCRIPTION SECTION
+
+==================================================
 CRITICAL RULES:
+==================================================
+
 1) Project Splitting Rules (very important):
 - The input text may describe ONE master project that contains MULTIPLE sub-projects.
 
@@ -88,6 +102,15 @@ CRITICAL RULES:
   - Multiple words or verbs describe a single continuous scope of work,
   - Multiple components together form one unified intervention,
   - Multiple actions are tightly coupled and jointly describe how one project is executed.
+
+- Text after "; Description:" MAY be used to extract
+  master_project_title and project_title if it provides clearer meaning.
+
+- HOWEVER:
+  - master_project_title and project_title MUST NOT include
+    the literal string "Description:" or the delimiter "; Description:".
+  - When using description text for titles, extract ONLY the meaningful
+    content and REMOVE the label completely.
 
 - When in doubt, prefer fewer project_title entries rather than over-splitting.
 
@@ -156,5 +179,5 @@ CRITICAL RULES:
 - At minimum, always return:
     - one master_project_title
     - one project_title
-    
+
 """)
