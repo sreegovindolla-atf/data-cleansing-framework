@@ -46,7 +46,7 @@ Rules:
 PROMPT = textwrap.dedent("""\
 Extract the following fields as labeled spans from the input text.
 
-Single per document (optional):
+Single per document:
 - master_project_title
 
 Repeatable (one per project):
@@ -54,7 +54,7 @@ Repeatable (one per project):
 - beneficiary_count
 - beneficiary_group_name
 
-Repeatable (can repeat multiple times):
+Repeatable (can repeat multiple times for a project):
 - asset_quantity (number linked to an asset)
 - asset (the item being delivered/built)
 - asset_quantity_uom (unit of measure for the asset_quantity)

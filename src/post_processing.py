@@ -34,7 +34,9 @@ def smart_title_case(text):
     return " ".join(out)
 
 def normalize_class(name: str) -> str:
-    return re.sub(r"\s+", "_", name.strip().lower()) if name else ""
+    if not name:
+        return ""
+    return re.sub(r"\s+", "_", str(name).strip().lower())
 
 def to_int_or_none(val):
     if val is None:
@@ -46,10 +48,74 @@ def to_int_or_none(val):
     return int(m.group(0)) if m else None
 
 def fmt_mp(n: int) -> str:
-    return f"MP-{n:06d}"   # widened so you can go beyond 9999 safely
+    return f"MP-{n:06d}"
 
 def fmt_prj(mp_code: str, n: int) -> str:
     return f"PRJ-{mp_code}-{n:03d}"
+
+# -----------------------
+# IMPORTANT: reconstruct extractions from your "pair/triple" schema
+# -----------------------
+def parse_langextract_grouped_pairs(doc: dict):
+    """
+    Your schema stores each logical extraction across multiple rows, keyed by group_index:
+      extraction_class == "extraction_class" -> extraction_text contains the field name
+      extraction_class == "extraction_text"  -> extraction_text contains the value
+      extraction_class == "extraction_index" -> extraction_text contains the logical index
+    We reconstruct: {"extraction_class": <field>, "extraction_text": <value>, "extraction_index": <idx>}
+    """
+    raw = doc.get("extractions", [])
+    if not isinstance(raw, list) or not raw:
+        return []
+
+    # Detect the "split rows" format
+    looks_split = any(isinstance(e, dict) and e.get("extraction_class") in ("extraction_class", "extraction_text", "extraction_index")
+                      for e in raw)
+    if not looks_split:
+        # already normal format
+        return raw
+
+    groups = {}  # group_index -> {"cls":..., "val":..., "idx":... , "order":...}
+    for e in raw:
+        if not isinstance(e, dict):
+            continue
+        g = e.get("group_index")
+        if g is None:
+            # if missing group_index, fallback to using extraction_index as unique key
+            g = f"idx_{e.get('extraction_index', 10**9)}"
+
+        groups.setdefault(g, {"cls": None, "val": None, "idx": None, "order": e.get("extraction_index", 10**9)})
+
+        kind = e.get("extraction_class")
+        txt  = e.get("extraction_text")
+
+        # keep a stable ordering fallback
+        groups[g]["order"] = min(groups[g]["order"], e.get("extraction_index", 10**9))
+
+        if kind == "extraction_class":
+            groups[g]["cls"] = txt
+        elif kind == "extraction_text":
+            groups[g]["val"] = txt
+        elif kind == "extraction_index":
+            # this is the logical index within the prompt output
+            try:
+                groups[g]["idx"] = int(str(txt).strip())
+            except Exception:
+                groups[g]["idx"] = None
+
+    out = []
+    for g, v in groups.items():
+        if v["cls"] is None and v["val"] is None:
+            continue
+        out.append({
+            "extraction_class": v["cls"],
+            "extraction_text": v["val"],
+            # Prefer the logical idx if present, else fallback to original ordering
+            "extraction_index": v["idx"] if v["idx"] is not None else v["order"],
+        })
+
+    out.sort(key=lambda x: x.get("extraction_index", 10**9))
+    return out
 
 # -----------------------
 # main parsing
@@ -60,7 +126,7 @@ if not INPUT_JSONL.exists():
 rows = []
 
 with open(INPUT_JSONL, "r", encoding="utf-8") as f:
-    for doc_index, line in enumerate(f, start=1):  # start=1 => MP-000001 corresponds to first doc
+    for doc_index, line in enumerate(f, start=1):
         line = line.strip()
         if not line:
             continue
@@ -68,20 +134,22 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
         doc = json.loads(line)
         text = doc.get("text")
 
-        # Each JSONL row is a unique master project, regardless of title
         master_project_code = fmt_mp(doc_index)
+
+        # use reconstructed extractions
+        reconstructed = parse_langextract_grouped_pairs(doc)
 
         # normalize + sort extractions
         exs = []
-        for e in doc.get("extractions", []):
+        for e in reconstructed:
             cls = normalize_class(e.get("extraction_class"))
             val = e.get("extraction_text")
             if val is None or str(val).strip() == "":
                 continue
             exs.append({"cls": cls, "val": val, "idx": e.get("extraction_index", 10**9)})
+
         exs.sort(key=lambda x: x["idx"])
 
-        # ---- master project title (optional) ----
         master_project_title = None
         for x in exs:
             if x["cls"] == "master_project_title":
@@ -89,14 +157,10 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                 break
 
         # ---- beneficiary storage ----
-        # global (doc-level) fallback
         global_ben_count = None
         global_ben_group = None
+        project_ben = {}
 
-        # project-specific beneficiaries keyed by project_code
-        project_ben = {}  # project_code -> {"beneficiary_count":..., "beneficiary_group_name":...}
-
-        # ---- iterate and build combined rows ----
         project_counter = 0
         current_project_code = None
         current_project_title = None
@@ -106,7 +170,7 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
         pending_uom = None
 
         projects_with_assets = set()
-        seen_projects_in_doc = []  # [(project_code, project_title)]
+        seen_projects_in_doc = []
 
         def get_ben(prj_code):
             bc = None
@@ -123,11 +187,8 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
         for x in exs:
             cls, val = x["cls"], x["val"]
 
-            # -------------------------
             # project boundary
-            # -------------------------
             if cls == "project_title":
-                # flush any open asset row before switching project
                 if current_asset is not None:
                     rows.append(current_asset)
                     projects_with_assets.add(current_asset["project_code"])
@@ -138,18 +199,12 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                 current_project_code = fmt_prj(master_project_code, project_counter)
                 seen_projects_in_doc.append((current_project_code, current_project_title))
 
-                project_ben[current_project_code] = {
-                    "beneficiary_count": None,
-                    "beneficiary_group_name": None,
-                }
-
+                project_ben[current_project_code] = {"beneficiary_count": None, "beneficiary_group_name": None}
                 pending_qty = None
                 pending_uom = None
                 continue
 
-            # -------------------------
-            # beneficiaries (project-specific if within a project; else global)
-            # -------------------------
+            # beneficiaries
             if cls == "beneficiary_count":
                 b = to_int_or_none(val)
                 if current_project_code is not None:
@@ -170,11 +225,8 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                         global_ben_group = g
                 continue
 
-            # -------------------------
             # assets
-            # -------------------------
             if cls == "asset":
-                # flush previous asset row
                 if current_asset is not None:
                     rows.append(current_asset)
                     projects_with_assets.add(current_asset["project_code"])
@@ -195,7 +247,6 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                     "input_text": text,
                 }
 
-                # attach pending qty/uom that came before asset
                 if pending_qty is not None:
                     current_asset["asset_quantity"] = pending_qty
                     pending_qty = None
@@ -213,7 +264,7 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                     pending_qty = qty
                 continue
 
-            if cls in ("asset_quantity_uom", "uom", "unit_of_measure"):
+            if cls in ("asset_quantity_uom", "uom", "unit_of_measure", "unit"):
                 uom = smart_title_case(val)
                 if current_asset is not None:
                     current_asset["asset_quantity_uom"] = uom
@@ -221,14 +272,12 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                     pending_uom = uom
                 continue
 
-        # flush last asset in doc
         if current_asset is not None:
             rows.append(current_asset)
             projects_with_assets.add(current_asset["project_code"])
             current_asset = None
 
-        # If no project_title was extracted at all, create a stub "project"
-        # so every master project has at least one project_code.
+        # stub project if none found
         if not seen_projects_in_doc:
             project_counter = 1
             current_project_code = fmt_prj(master_project_code, project_counter)
@@ -238,7 +287,7 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                 "beneficiary_group_name": global_ben_group,
             }
 
-        # emit stub rows for projects with no assets
+        # stub rows for projects with no assets
         for prj_code, prj_title in seen_projects_in_doc:
             if prj_code not in projects_with_assets:
                 bc = project_ben.get(prj_code, {}).get("beneficiary_count")
@@ -283,5 +332,7 @@ for c in FINAL_COLUMNS:
         df[c] = None
 df = df[FINAL_COLUMNS]
 
+OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
 df.to_csv(OUT_CSV, index=False)
 print(f"Saved combined output: {OUT_CSV}")
+print("Non-null counts:\n", df.notna().sum())

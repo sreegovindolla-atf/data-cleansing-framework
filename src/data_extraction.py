@@ -45,7 +45,7 @@ INPUT_CSV = Path("data/input/denorm_mastertable.csv")
 if not INPUT_CSV.exists():
     raise FileNotFoundError(f"Input CSV not found: {INPUT_CSV}")
 
-df_input = pd.read_csv(INPUT_CSV, nrows=1000)
+df_input = pd.read_csv(INPUT_CSV)
 
 if "ProjectTitleEnglish" not in df_input.columns:
     raise ValueError("Column 'ProjectTitleEnglish' not found in input CSV")
