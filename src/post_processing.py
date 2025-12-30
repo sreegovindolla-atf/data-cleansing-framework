@@ -3,6 +3,8 @@ import re
 import pandas as pd
 from pathlib import Path
 import argparse
+from sqlalchemy import create_engine
+import urllib
 
 # -----------------------
 # args + paths
@@ -18,6 +20,24 @@ INPUT_JSONL = RUN_OUTPUT_DIR / f"{RUN_ID}_combined_extraction_results.jsonl"
 OUT_CSV     = RUN_OUTPUT_DIR / f"{RUN_ID}_combined_extraction.csv"
 
 STOP_WORDS = {"of", "with", "at", "in", "on", "for", "to", "and", "or", "the", "a", "an", "by", "from"}
+
+# -----------------------
+# SQL Server (Windows Auth)
+# -----------------------
+
+def get_sql_server_engine():
+    params = urllib.parse.quote_plus(
+        "DRIVER={ODBC Driver 17 for SQL Server};"
+        "SERVER=SREESPOORTHY\SQLEXPRESS01;"
+        "DATABASE=ForeignAidDatabase_2019;"
+        "Trusted_Connection=yes;"
+        "TrustServerCertificate=yes;"
+    )
+    return create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
+
+TARGET_SCHEMA  = "dbo"
+TARGET_TABLE   = "MasterTable_extracted"
+
 
 # -----------------------
 # helpers
@@ -334,5 +354,21 @@ df = df[FINAL_COLUMNS]
 
 OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
 df.to_csv(OUT_CSV, index=False)
+
+# -----------------------
+# write to SQL Server
+# -----------------------
+engine = get_sql_server_engine()
+df.to_sql(
+    TARGET_TABLE,
+    engine,
+    schema=TARGET_SCHEMA,
+    if_exists="append",
+    index=False,
+    chunksize=500,
+)
+
 print(f"Saved combined output: {OUT_CSV}")
+print(f"Saved to SQL Server: {TARGET_SCHEMA}.{TARGET_TABLE}")
+print("Rows written:", len(df))
 print("Non-null counts:\n", df.notna().sum())

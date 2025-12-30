@@ -12,6 +12,8 @@ import hashlib
 import pickle
 import re
 from pathlib import Path
+from sqlalchemy import create_engine
+import urllib
 
 import pandas as pd
 import langextract as lx
@@ -40,12 +42,32 @@ OUT_JSON  = RUN_OUTPUT_DIR / f"{RUN_ID}_combined_extraction_results.json"
 # Cache file (stores mapping: text_hash -> AnnotatedDocument)
 CACHE_PKL = RUN_OUTPUT_DIR / f"{RUN_ID}_lx_cache.pkl"
 
-INPUT_CSV = Path("data/input/denorm_mastertable.csv")
+# =====================================
+# SQL SERVER CONNECTION (WINDOWS AUTH)
+# =====================================
+def get_sql_server_engine():
+    params = urllib.parse.quote_plus(
+        "DRIVER={ODBC Driver 17 for SQL Server};"
+        "SERVER=SREESPOORTHY\SQLEXPRESS01;"
+        "DATABASE=ForeignAidDatabase_2019;"
+        "Trusted_Connection=yes;"
+        "TrustServerCertificate=yes;"
+    )
+    return create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
 
-if not INPUT_CSV.exists():
-    raise FileNotFoundError(f"Input CSV not found: {INPUT_CSV}")
+engine = get_sql_server_engine()
 
-df_input = pd.read_csv(INPUT_CSV, nrows = 10)
+# =====================================
+# SOURCE QUERY
+# =====================================
+SOURCE_QUERY = """
+SELECT TOP 10
+    ProjectTitleEnglish
+FROM dbo.denorm_MasterTable
+"""
+
+df_input = pd.read_sql(SOURCE_QUERY, engine)
+
 
 if "ProjectTitleEnglish" not in df_input.columns:
     raise ValueError("Column 'ProjectTitleEnglish' not found in input CSV")
@@ -106,8 +128,6 @@ def save_cache(cache: dict, path: Path):
 
 
 # -----------------------
-# extraction loop (ONE prompt, ONE pass)
-# + cache (avoid API calls for repeated input_text)
 # + incremental checkpointing every 50 rows
 # -----------------------
 CHECKPOINT_EVERY = 50
@@ -122,10 +142,8 @@ for i, text in enumerate(input_texts, start=1):
     h = text_hash(text)
 
     if h in cache:
-        # reuse cached AnnotatedDocument (no API call)
         result = cache[h]
     else:
-        # new input -> API call once
         result = lx.extract(
             text_or_documents=text,
             prompt_description=PROMPT,
@@ -139,7 +157,7 @@ for i, text in enumerate(input_texts, start=1):
 
     all_results.append(result)
 
-    # checkpoint write every N rows
+    # checkpoint write every 50 rows
     if i % CHECKPOINT_EVERY == 0:
         lx.io.save_annotated_documents(all_results, output_name=OUT_JSONL.name, output_dir=RUN_OUTPUT_DIR)
         jsonl_to_pretty_json(OUT_JSONL, OUT_JSON)
