@@ -48,11 +48,13 @@ Extract the following fields as labeled spans from the input text.
 
 Single per document:
 - master_project_title
+- master_project_amount_extracted
 
-Repeatable (one per project):
+Repeatable (one per project OR master-level when applicable):
 - project_title
 - beneficiary_count
 - beneficiary_group_name
+- project_amount_extracted
 
 Repeatable (can repeat multiple times for a project):
 - asset_quantity (number linked to an asset)
@@ -62,6 +64,8 @@ Repeatable (can repeat multiple times for a project):
 Mandatory fields:
 - master_project_title  
 - project_title
+
+
 
 ==================================================
 INPUT STRUCTURE (CRITICAL – READ CAREFULLY):
@@ -179,5 +183,15 @@ CRITICAL RULES:
 - At minimum, always return:
     - one master_project_title
     - one project_title
+
+8) Amount extraction rules (IMPORTANT):
+
+AMOUNT RULES (IMPORTANT):
+- Extract amounts when they are explicitly mentioned in the text (Title or Description).
+- extraction_text must be numeric (int/float). Do NOT include currency symbols or words.
+  Examples:
+    "AED 1,200,000" -> 1200000
+    "USD 2.5 million" -> 2500000
+- These may appear at master level or per project; extract whatever is stated.
 
 """)

@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config.examples.infrastructure_projects import EXAMPLES as INFRA_EXAMPLES
 from config.examples.distribution_projects import EXAMPLES as DIST_EXAMPLES
+from config.examples.service_projects import EXAMPLES as SERV_EXAMPLES
 from config.prompt import PROMPT
 
 
@@ -61,45 +62,20 @@ engine = get_sql_server_engine()
 # SOURCE QUERY
 # =====================================
 SOURCE_QUERY = """
-SELECT TOP 10
-    ProjectTitleEnglish + '; Description: ' + DescriptionEnglish   AS ProjectTitleEnglish
-FROM dbo.denorm_MasterTable
+select top 10 *
+from dbo.denorm_MasterTable
+where ProjectTitleEnglish like '%AED %'
 """
 
 df_input = pd.read_sql(SOURCE_QUERY, engine)
 
-
-if "ProjectTitleEnglish" not in df_input.columns:
-    raise ValueError("Column 'ProjectTitleEnglish' not found in input CSV")
-
-input_texts = (
-    df_input["ProjectTitleEnglish"]
-    .dropna()
-    .astype(str)
-    .str.strip()
-)
-input_texts = [t for t in input_texts if t]
-
-EXAMPLES = INFRA_EXAMPLES + DIST_EXAMPLES
+EXAMPLES = INFRA_EXAMPLES + DIST_EXAMPLES + SERV_EXAMPLES
 
 
 # -----------------------
 # helpers
 # -----------------------
-def jsonl_to_pretty_json(jsonl_path: Path, json_path: Path):
-    docs = []
-    if not jsonl_path.exists():
-        return
-    with open(jsonl_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                docs.append(json.loads(line))
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(docs, f, ensure_ascii=False, indent=2)
-
 def normalize_text(t: str) -> str:
-    # light normalization: collapse whitespace, trim
     t = t.strip()
     t = re.sub(r"\s+", " ", t)
     return t
@@ -116,30 +92,169 @@ def load_cache(path: Path) -> dict:
             obj = pickle.load(f)
         return obj if isinstance(obj, dict) else {}
     except Exception:
-        # if cache is corrupted or incompatible, ignore it
         return {}
 
 def save_cache(cache: dict, path: Path):
-    # atomic-ish write
     tmp = path.with_suffix(".tmp")
     with open(tmp, "wb") as f:
         pickle.dump(cache, f)
     tmp.replace(path)
 
+def _enum_to_value(x):
+    # Converts Enum-like objects to their value, else returns x
+    try:
+        return x.value
+    except Exception:
+        return x
+
+def extraction_to_dict(ex):
+    """
+    Convert langextract Extraction object -> plain dict
+    """
+    if isinstance(ex, dict):
+        return ex
+
+    # Most langextract Extraction objects have attributes like these:
+    d = {}
+    for k in [
+        "extraction_class",
+        "extraction_text",
+        "char_interval",
+        "alignment_status",
+        "extraction_index",
+        "group_index",
+        "description",
+        "attributes",
+    ]:
+        if hasattr(ex, k):
+            v = getattr(ex, k)
+
+            # char_interval is an object with start_pos/end_pos
+            if k == "char_interval" and v is not None:
+                if isinstance(v, dict):
+                    d[k] = v
+                else:
+                    start = getattr(v, "start_pos", None)
+                    end = getattr(v, "end_pos", None)
+                    d[k] = {"start_pos": start, "end_pos": end}
+                continue
+
+            # alignment_status may be Enum-like
+            if k == "alignment_status" and v is not None:
+                d[k] = _enum_to_value(v)
+                continue
+
+            # attributes might be non-serializable sometimes; keep only dict
+            if k == "attributes" and v is not None and not isinstance(v, dict):
+                d[k] = None
+                continue
+
+            d[k] = v
+
+    return d
+
+def annotated_to_dict(res):
+    """
+    Robust serializer for langextract AnnotatedDocument.
+    Handles:
+      - AnnotatedDocument object
+      - dict
+      - cached JSON dict
+      - cached JSON string
+    """
+    if isinstance(res, dict):
+        return res
+
+    # If cache stored JSON as a string
+    if isinstance(res, str):
+        s = res.strip()
+        if s.startswith("{") and s.endswith("}"):
+            try:
+                parsed = json.loads(s)
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                pass
+        # Not valid JSON -> treat as text-only
+        return {"text": s, "extractions": []}
+
+    # Try known attributes on AnnotatedDocument
+    text = getattr(res, "text", None)
+    exs  = getattr(res, "extractions", None)
+    doc_id = getattr(res, "document_id", None)
+
+    if text is not None or exs is not None:
+        out = {
+            "extractions": [extraction_to_dict(e) for e in (exs or [])],
+            "text": text if text is not None else "",
+        }
+        if doc_id is not None:
+            out["document_id"] = doc_id
+        return out
+
+    # last resort
+    return {"text": str(res), "extractions": []}
+
+def save_results_with_master_project_amount_actual(results_with_amount, jsonl_path: Path, json_path: Path):
+    """
+    Writes JSONL and JSON where each doc includes:
+      - extractions
+      - text
+      - master_project_amount_actual   (right after text)
+      - document_id (if present)
+    """
+    docs = []
+
+    with open(jsonl_path, "w", encoding="utf-8") as f:
+        for result, master_project_amount_actual in results_with_amount:
+            d = annotated_to_dict(result)
+
+            # Build ordered output explicitly
+            out = {}
+            out["extractions"] = d.get("extractions", [])
+            out["text"] = d.get("text", "")
+            out["master_project_amount_actual"] = master_project_amount_actual
+
+            if "document_id" in d:
+                out["document_id"] = d.get("document_id")
+
+            # If you want to keep other keys from d (optional)
+            for k, v in d.items():
+                if k in ("extractions", "text", "document_id"):
+                    continue
+                out[k] = v
+
+            f.write(json.dumps(out, ensure_ascii=False) + "\n")
+            docs.append(out)
+
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(docs, f, ensure_ascii=False, indent=2)
+
 
 # -----------------------
-# + incremental checkpointing every 50 rows
+# extraction loop
 # -----------------------
 CHECKPOINT_EVERY = 50
-all_results = []
 
-# in-memory + persistent cache
+# Store tuples so we can write master_project_amount_actual even if langextract doesn't serialize attributes
+all_results_with_amount = []  # [(AnnotatedDocument, raw_amount), ...]
+
 cache = load_cache(CACHE_PKL)
-
 print(f"[INFO] Loaded cache entries: {len(cache)} from {CACHE_PKL.name}")
 
-for i, text in enumerate(input_texts, start=1):
-    h = text_hash(text)
+for i, row in enumerate(df_input.itertuples(index=False), start=1):
+    title = str(getattr(row, "ProjectTitleEnglish", "") or "").strip()
+    description = str(getattr(row, "DescriptionEnglish", "") or "").strip()
+
+    if title != description:
+        text = f"{title} ; Description: {description}"
+    else:
+        text = title
+
+    # raw amount from SQL row (keep as-is for now)
+    raw_amount = getattr(row, "Amount", None)
+
+    h = text_hash(text + f"|{raw_amount}")
 
     if h in cache:
         result = cache[h]
@@ -153,20 +268,24 @@ for i, text in enumerate(input_texts, start=1):
             fence_output=True,
             use_schema_constraints=True,
         )
-        cache[h] = result
 
-    all_results.append(result)
+    # You can still keep this (harmless), but we won't rely on it for output.
+    try:
+        result.attributes = result.attributes or {}
+        result.attributes.update({"master_project_amount_actual": master_project_amount_actual})
+    except Exception:
+        pass
 
-    # checkpoint write every 50 rows
+    cache[h] = result
+    all_results_with_amount.append((result, raw_amount))
+
     if i % CHECKPOINT_EVERY == 0:
-        lx.io.save_annotated_documents(all_results, output_name=OUT_JSONL.name, output_dir=RUN_OUTPUT_DIR)
-        jsonl_to_pretty_json(OUT_JSONL, OUT_JSON)
+        save_results_with_master_project_amount_actual(all_results_with_amount, OUT_JSONL, OUT_JSON)
         save_cache(cache, CACHE_PKL)
         print(f"[checkpoint] saved {i} rows | cache={len(cache)}")
 
 # final save
-lx.io.save_annotated_documents(all_results, output_name=OUT_JSONL.name, output_dir=RUN_OUTPUT_DIR)
-jsonl_to_pretty_json(OUT_JSONL, OUT_JSON)
+save_results_with_master_project_amount_actual(all_results_with_amount, OUT_JSONL, OUT_JSON)
 save_cache(cache, CACHE_PKL)
 
 print(f"Saved extraction: {OUT_JSONL}")
