@@ -146,7 +146,15 @@ CRITICAL RULES:
     - "extraction_text": string or number (never null, never list/dict)
     - "extraction_index": integer (order in which you found it; start at 0 and increment)
 
-    If nothing is found, return:
-    {"text":"<original input>","extractions":[]}
+7) MANDATORY FALLBACK RULE (critical):
 
+- master_project_title and project_title MUST ALWAYS be present.
+- If the input text is short, generic, or does not explicitly describe a project:
+    - Use the full input text verbatim as master_project_title.
+    - Use the same value as project_title.
+- Do NOT return an empty extractions list.
+- At minimum, always return:
+    - one master_project_title
+    - one project_title
+    
 """)

@@ -1,5 +1,5 @@
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=True)
 
 import logging
 logging.getLogger("absl").setLevel(logging.ERROR)
@@ -45,7 +45,7 @@ INPUT_CSV = Path("data/input/denorm_mastertable.csv")
 if not INPUT_CSV.exists():
     raise FileNotFoundError(f"Input CSV not found: {INPUT_CSV}")
 
-df_input = pd.read_csv(INPUT_CSV)
+df_input = pd.read_csv(INPUT_CSV, nrows = 10)
 
 if "ProjectTitleEnglish" not in df_input.columns:
     raise ValueError("Column 'ProjectTitleEnglish' not found in input CSV")
@@ -130,10 +130,10 @@ for i, text in enumerate(input_texts, start=1):
             text_or_documents=text,
             prompt_description=PROMPT,
             examples=EXAMPLES,
-            model_id="gpt-4o",
+            model_id="gpt-4.1-mini",
             api_key=os.environ.get("OPENAI_API_KEY"),
             fence_output=True,
-            use_schema_constraints=False,
+            use_schema_constraints=True,
         )
         cache[h] = result
 
