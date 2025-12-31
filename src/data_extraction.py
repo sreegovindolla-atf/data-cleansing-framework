@@ -71,9 +71,8 @@ engine = get_sql_server_engine()
 # SOURCE QUERY
 # =====================================
 SOURCE_QUERY = """
-select top 10 *
+select *
 from dbo.denorm_MasterTable
-where ProjectTitleEnglish like '%AED %' and ODA_Amount <> 0
 """
 
 df_input = pd.read_sql(SOURCE_QUERY, engine)
