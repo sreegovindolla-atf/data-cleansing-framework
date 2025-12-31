@@ -6,6 +6,7 @@ import argparse
 from sqlalchemy import create_engine
 import urllib
 import sys
+from sqlalchemy import text as sql_text
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -20,6 +21,8 @@ from utils.post_processing_helpers import (
     , parse_langextract_grouped_pairs
 )
 
+from utils.post_processing_sql_queries import QUERIES
+
 # -----------------------
 # args + paths
 # -----------------------
@@ -32,8 +35,6 @@ RUN_OUTPUT_DIR = Path("data/outputs") / RUN_ID
 
 INPUT_JSONL = RUN_OUTPUT_DIR / f"{RUN_ID}_combined_extraction_results.jsonl"
 OUT_CSV     = RUN_OUTPUT_DIR / f"{RUN_ID}_combined_extraction.csv"
-
-STOP_WORDS = {"of", "with", "at", "in", "on", "for", "to", "and", "or", "the", "a", "an", "by", "from"}
 
 # -----------------------
 # SQL Server (Windows Auth)
@@ -400,3 +401,8 @@ print(f"Saved combined output: {OUT_CSV}")
 print(f"Saved to SQL Server: {TARGET_SCHEMA}.{TARGET_TABLE}")
 print("Rows written:", len(df))
 print("Non-null counts:\n", df.notna().sum())
+
+# Split the output into 3 different tables - master projects table, projects table, projects-assets table
+with engine.begin() as conn:
+    for q in QUERIES:
+        conn.execute(sql_text(q))
