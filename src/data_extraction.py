@@ -64,7 +64,7 @@ engine = get_sql_server_engine()
 SOURCE_QUERY = """
 select top 10 *
 from dbo.denorm_MasterTable
-where ProjectTitleEnglish like '%AED %'
+where ProjectTitleEnglish like '%AED %' and ODA_Amount <> 0
 """
 
 df_input = pd.read_sql(SOURCE_QUERY, engine)
@@ -195,7 +195,7 @@ def annotated_to_dict(res):
     # last resort
     return {"text": str(res), "extractions": []}
 
-def save_results_with_master_project_amount_actual(results_with_amount, jsonl_path: Path, json_path: Path):
+def save_results_with_master_project_amount(results_with_amount, jsonl_path: Path, json_path: Path):
     """
     Writes JSONL and JSON where each doc includes:
       - extractions
@@ -206,14 +206,18 @@ def save_results_with_master_project_amount_actual(results_with_amount, jsonl_pa
     docs = []
 
     with open(jsonl_path, "w", encoding="utf-8") as f:
-        for result, master_project_amount_actual in results_with_amount:
+        for result, index, master_project_amount_actual, master_project_oda_amount, master_project_ge_amount, master_project_off_amount in results_with_amount:
             d = annotated_to_dict(result)
-
+            print(index)
             # Build ordered output explicitly
             out = {}
             out["extractions"] = d.get("extractions", [])
             out["text"] = d.get("text", "")
+            out["index"] = index
             out["master_project_amount_actual"] = master_project_amount_actual
+            out["master_project_oda_amount"] = master_project_oda_amount
+            out["master_project_ge_amount"] = master_project_ge_amount
+            out["master_project_off_amount"] = master_project_off_amount
 
             if "document_id" in d:
                 out["document_id"] = d.get("document_id")
@@ -251,10 +255,14 @@ for i, row in enumerate(df_input.itertuples(index=False), start=1):
     else:
         text = title
 
+    index = getattr(row, "Index", None)
     # raw amount from SQL row (keep as-is for now)
-    raw_amount = getattr(row, "Amount", None)
-
-    h = text_hash(text + f"|{raw_amount}")
+    master_project_amount_actual = getattr(row, "Amount", None)
+    master_project_oda_amount = getattr(row, "ODA_Amount", None)
+    master_project_ge_amount = getattr(row, "GE_Amount", None)
+    master_project_off_amount = getattr(row, "OFF_Amount", None)
+    
+    h = text_hash(text + f"|{master_project_amount_actual}")
 
     if h in cache:
         result = cache[h]
@@ -270,22 +278,26 @@ for i, row in enumerate(df_input.itertuples(index=False), start=1):
         )
 
     # You can still keep this (harmless), but we won't rely on it for output.
-    try:
-        result.attributes = result.attributes or {}
-        result.attributes.update({"master_project_amount_actual": master_project_amount_actual})
-    except Exception:
-        pass
+    #try:
+    #    result.attributes = result.attributes or {}
+    #    result.attributes.update({"index": index})
+    #    result.attributes.update({"master_project_amount_actual": master_project_amount_actual})
+    #    result.attributes.update({"master_project_oda_amount": master_project_oda_amount})
+    #    result.attributes.update({"master_project_ge_amount": master_project_ge_amount})
+    #    result.attributes.update({"master_project_off_amount": master_project_off_amount})
+    #except Exception:
+    #    pass
 
     cache[h] = result
-    all_results_with_amount.append((result, raw_amount))
+    all_results_with_amount.append((result, index, master_project_amount_actual, master_project_oda_amount, master_project_ge_amount, master_project_off_amount))
 
     if i % CHECKPOINT_EVERY == 0:
-        save_results_with_master_project_amount_actual(all_results_with_amount, OUT_JSONL, OUT_JSON)
+        save_results_with_master_project_amount(all_results_with_amount, OUT_JSONL, OUT_JSON)
         save_cache(cache, CACHE_PKL)
         print(f"[checkpoint] saved {i} rows | cache={len(cache)}")
 
 # final save
-save_results_with_master_project_amount_actual(all_results_with_amount, OUT_JSONL, OUT_JSON)
+save_results_with_master_project_amount(all_results_with_amount, OUT_JSONL, OUT_JSON)
 save_cache(cache, CACHE_PKL)
 
 print(f"Saved extraction: {OUT_JSONL}")

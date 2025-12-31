@@ -169,9 +169,13 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
 
         doc = json.loads(line)
         text = doc.get("text")
+        index = doc.get("index")
 
         # raw master amount comes from JSONL top-level field
         master_project_amount_actual = to_float_or_none(doc.get("master_project_amount_actual"))
+        master_project_oda_amount = to_float_or_none(doc.get("master_project_oda_amount"))
+        master_project_ge_amount = to_float_or_none(doc.get("master_project_ge_amount"))
+        master_project_off_amount = to_float_or_none(doc.get("master_project_off_amount"))
 
         master_project_code = fmt_mp(doc_index)
 
@@ -317,10 +321,14 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                 amt_extr = get_project_amt_extracted(current_project_code)
 
                 current_asset = {
+                    "index": index,
                     "master_project_code": master_project_code,
                     "master_project_title": master_project_title,
                     "master_project_amount_actual": master_project_amount_actual,
                     "master_project_amount_extracted": master_project_amount_extracted,
+                    "master_project_oda_amount": master_project_oda_amount,
+                    "master_project_ge_amount": master_project_ge_amount,
+                    "master_project_off_amount": master_project_off_amount,
                     "project_code": current_project_code,
                     "project_title": current_project_title,
                     "beneficiary_count": ben_count,
@@ -382,10 +390,14 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                 bg = project_ben.get(prj_code, {}).get("beneficiary_group_name") or global_ben_group
 
                 append_row({
+                    "index": index,
                     "master_project_code": master_project_code,
                     "master_project_title": master_project_title,
                     "master_project_amount_actual": master_project_amount_actual,
                     "master_project_amount_extracted": master_project_amount_extracted,
+                    "master_project_oda_amount": master_project_oda_amount,
+                    "master_project_ge_amount": master_project_ge_amount,
+                    "master_project_off_amount": master_project_off_amount,
                     "project_code": prj_code,
                     "project_title": prj_title,
                     "beneficiary_count": bc,
@@ -404,6 +416,9 @@ df = pd.DataFrame(rows)
 
 # Ensure numeric
 df["master_project_amount_actual"] = pd.to_numeric(df.get("master_project_amount_actual"), errors="coerce")
+df["master_project_oda_amount"] = pd.to_numeric(df.get("master_project_oda_amount"), errors="coerce")
+df["master_project_ge_amount"] = pd.to_numeric(df.get("master_project_ge_amount"), errors="coerce")
+df["master_project_off_amount"] = pd.to_numeric(df.get("master_project_off_amount"), errors="coerce")
 df["master_project_amount_extracted"] = pd.to_numeric(df.get("master_project_amount_extracted"), errors="coerce")
 df["project_amount_extracted"] = pd.to_numeric(df.get("project_amount_extracted"), errors="coerce")
 
@@ -422,13 +437,20 @@ df["_project_count"] = df["master_project_code"].map(project_counts).fillna(1).a
 # (same value repeated per project rows within the master)
 # -----------------------
 df["project_amount_actual"] = df["master_project_amount_actual"] / df["_project_count"]
+df["project_oda_amount"] = df["master_project_oda_amount"] / df["_project_count"]
+df["project_ge_amount"] = df["master_project_ge_amount"] / df["_project_count"]
+df["project_off_amount"] = df["master_project_off_amount"] / df["_project_count"]
 
 # Optional safety: if master is missing/bad, keep project_amount_actual as NaN
 df.loc[df["master_project_amount_actual"].apply(is_missing_or_bad), "project_amount_actual"] = pd.NA
+df.loc[df["master_project_oda_amount"].apply(is_missing_or_bad), "project_oda_amount"] = pd.NA
+df.loc[df["master_project_ge_amount"].apply(is_missing_or_bad), "project_ge_amount"] = pd.NA
+df.loc[df["master_project_off_amount"].apply(is_missing_or_bad), "project_off_amount"] = pd.NA
 
 df.drop(columns=["_project_count"], inplace=True)
 
 FINAL_COLUMNS = [
+    "index",
     "master_project_code",
     "master_project_title",
     "project_code",
@@ -441,8 +463,14 @@ FINAL_COLUMNS = [
     "input_text",
     "master_project_amount_actual",
     "master_project_amount_extracted",
+    "master_project_oda_amount",
+    "master_project_ge_amount",
+    "master_project_off_amount",
     "project_amount_actual",
     "project_amount_extracted",
+    "project_oda_amount",
+    "project_ge_amount",
+    "project_off_amount",
 ]
 
 # Backwards-compat name: your rows dict currently uses "project_amount_extracted"
