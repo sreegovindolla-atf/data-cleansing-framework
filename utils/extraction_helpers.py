@@ -12,10 +12,31 @@ import urllib
 import pandas as pd
 import langextract as lx
 
-def normalize_text(t: str) -> str:
-    t = t.strip()
-    t = re.sub(r"\s+", " ", t)
-    return t
+def safe_str(x) -> str:
+    if x is None:
+        return ""
+    try:
+        if pd.isna(x):
+            return ""
+    except Exception:
+        pass
+    return str(x)
+
+def normalize_text(text):
+    if text is None:
+        return ""
+    try:
+        if pd.isna(text):
+            return ""
+    except Exception:
+        pass
+
+    text = str(text)
+    text = text.replace("\u00a0", " ")
+    text = re.sub(r"\s+", " ", text).strip()
+
+    return text
+
 
 def text_hash(t: str) -> str:
     t_norm = normalize_text(t)

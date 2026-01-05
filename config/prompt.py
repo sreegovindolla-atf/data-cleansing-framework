@@ -65,8 +65,6 @@ Mandatory fields:
 - master_project_title  
 - project_title
 
-
-
 ==================================================
 INPUT STRUCTURE (CRITICAL – READ CAREFULLY):
 ==================================================
@@ -161,7 +159,7 @@ CRITICAL RULES:
 
 6) Output format:
    - extraction_text MUST be a string, integer, or float (never null, never a list/dict).
-   - If a field is not explicitly present, DO NOT output an extraction for it.
+   - If a field is not explicitly present, DO NOT output an extraction for it EXCEPT mandatory fields (master_project_title, project_title), which must always be produced using fallback rules.
    - Do not use attributes for now (leave attributes empty).
     - Return ONLY valid JSON (no markdown, no commentary).
     - The top-level JSON MUST have exactly these keys:

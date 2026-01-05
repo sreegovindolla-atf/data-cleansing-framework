@@ -32,6 +32,7 @@ from utils.extraction_helpers import (
     save_cache,
     annotated_to_dict,
     save_results_with_master_project_amount,
+    safe_str
 )
 
 
@@ -73,6 +74,7 @@ engine = get_sql_server_engine()
 SOURCE_QUERY = """
 select *
 from dbo.denorm_MasterTable
+where ProjectTitleEnglish is not null and DescriptionEnglish is not null
 """
 
 df_input = pd.read_sql(SOURCE_QUERY, engine)
@@ -84,20 +86,30 @@ EXAMPLES = INFRA_EXAMPLES + DIST_EXAMPLES + SERV_EXAMPLES
 # -----------------------
 CHECKPOINT_EVERY = 50
 
-# Store tuples so we can write master_project_amount_actual even if langextract doesn't serialize attributes
+# Store tuples
 all_results_with_amount = []  # [(AnnotatedDocument, raw_amount), ...]
 
 cache = load_cache(CACHE_PKL)
 print(f"[INFO] Loaded cache entries: {len(cache)} from {CACHE_PKL.name}")
 
 for i, row in enumerate(df_input.itertuples(index=False), start=1):
-    title = str(getattr(row, "ProjectTitleEnglish", "") or "").strip()
-    description = str(getattr(row, "DescriptionEnglish", "") or "").strip()
+    title = safe_str(getattr(row, "ProjectTitleEnglish", "") or "").strip()
+    description = safe_str(getattr(row, "DescriptionEnglish", "") or "").strip()
 
     if title != description:
         text = f"{title} ; Description: {description}"
     else:
         text = title
+
+    text = normalize_text(text)
+
+    if text is None:
+        text = ""
+
+    text = str(text).strip()
+
+    if not text:
+        continue
 
     index = getattr(row, "Index", None)
     # raw amount from SQL row (keep as-is for now)
@@ -106,7 +118,7 @@ for i, row in enumerate(df_input.itertuples(index=False), start=1):
     master_project_ge_amount = getattr(row, "GE_Amount", None)
     master_project_off_amount = getattr(row, "OFF_Amount", None)
     
-    h = text_hash(text + f"|{master_project_amount_actual}")
+    h = text_hash(text)
 
     if h in cache:
         result = cache[h]
@@ -118,10 +130,9 @@ for i, row in enumerate(df_input.itertuples(index=False), start=1):
             model_id="gpt-4.1-mini",
             api_key=os.environ.get("OPENAI_API_KEY"),
             fence_output=True,
-            use_schema_constraints=True,
+            use_schema_constraints=False,
         )
 
-    # You can still keep this (harmless), but we won't rely on it for output.
     #try:
     #    result.attributes = result.attributes or {}
     #    result.attributes.update({"index": index})

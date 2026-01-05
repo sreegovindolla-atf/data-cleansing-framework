@@ -1,14 +1,9 @@
 QUERIES = [
-    """CREATE TABLE dbo.cleaned_master_project (
-           [Index]                          NVARCHAR(50)       NOT NULL,
-           master_project_code              NVARCHAR(50)      NULL, 
-           master_project_title             NVARCHAR(MAX)      NULL,
-           master_project_amount_actual     FLOAT               NULL,
-           master_project_amount_extracted  FLOAT               NULL,
-           master_project_oda_amount        FLOAT               NULL,
-           master_project_ge_amount         FLOAT               NULL,
-           input_text                       NVARCHAR(MAX)      NULL       
-           )""",
+    """TRUNCATE TABLE dbo.cleaned_master_project""",
+
+    """TRUNCATE TABLE dbo.cleaned_project""",
+
+    """TRUNCATE TABLE dbo.cleaned_project_asset""",
 
     """INSERT INTO dbo.cleaned_master_project
        SELECT DISTINCT
@@ -21,21 +16,6 @@ QUERIES = [
            master_project_ge_amount,
            input_text
        FROM dbo.MasterTable_extracted""",
-
-    """CREATE TABLE dbo.cleaned_project (
-           [Index]                          NVARCHAR(50)       NOT NULL,
-           project_code                     NVARCHAR(50)      NULL,
-           project_title                    NVARCHAR(MAX)      NULL,
-           master_project_code              NVARCHAR(50)      NULL, 
-           master_project_title             NVARCHAR(MAX)      NULL,
-           beneficiary_count                INT                 NULL,
-           beneficiary_group_name           NVARCHAR(50)      NULL,
-           project_amount_actual            FLOAT               NULL,
-           project_amount_extracted         FLOAT               NULL,
-           project_oda_amount               FLOAT               NULL,
-           project_ge_amount                FLOAT               NULL,
-           input_text                       NVARCHAR(MAX)      NULL       
-           )""",
 
     """INSERT INTO dbo.cleaned_project
        SELECT DISTINCT
@@ -52,19 +32,6 @@ QUERIES = [
            project_ge_amount,
            input_text
        FROM dbo.MasterTable_extracted""",
-
-    """CREATE TABLE dbo.cleaned_project_asset (
-           [Index]                          NVARCHAR(50)       NOT NULL,
-           project_asset_code               NVARCHAR(50)      NULL,
-           project_code                     NVARCHAR(50)      NULL,
-           project_title                    NVARCHAR(MAX)      NULL,
-           master_project_code              NVARCHAR(50)      NULL, 
-           master_project_title             NVARCHAR(MAX)      NULL,
-           asset                            NVARCHAR(50)                NULL,
-           asset_quantity                   INT                 NULL,
-           asset_quantity_uom               NVARCHAR(50)                NULL,
-           input_text                       NVARCHAR(MAX)      NULL       
-           )""",
 
     """INSERT INTO dbo.cleaned_project_asset
        SELECT DISTINCT
