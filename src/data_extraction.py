@@ -74,7 +74,6 @@ engine = get_sql_server_engine()
 SOURCE_QUERY = """
 select *
 from dbo.denorm_MasterTable
-where ProjectTitleEnglish is not null and DescriptionEnglish is not null
 """
 
 df_input = pd.read_sql(SOURCE_QUERY, engine)
