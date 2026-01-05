@@ -1,0 +1,21 @@
+# Core Python utilities
+pandas>=2.0.0
+numpy>=1.24.0
+
+# File handling & CLI
+python-dotenv>=1.0.0
+pyyaml>=6.0
+tqdm>=4.66.0
+
+# Database (SQL Server)
+sqlalchemy>=2.0.0
+pyodbc>=5.0.0
+
+# AI / Extraction
+langextract>=0.3.0
+
+# Text processing
+regex>=2023.10.0
+
+# Date & time utilities
+python-dateutil>=2.8.2
