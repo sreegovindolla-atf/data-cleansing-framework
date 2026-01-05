@@ -61,6 +61,7 @@ data-cleansing-framework/
 ├── .env
 ├── .gitignore
 ├── requirements.txt
+├── LICENSE
 └── README.md
 ```
 
@@ -91,8 +92,11 @@ This step reads raw input text and produces structured extraction outputs.
 python src/data_extraction.py --run-id <RUN_ID>
 ```
 Generated outputs:
+
 <run_id>_combined_extraction_results.jsonl
+
 <run_id>_combined_extraction.json
+
 <run_id>_combined_extraction.csv
 
 ### 1️⃣b Run Post Processing (Standalone)
@@ -118,5 +122,28 @@ This will:
 3. Perform post-processing
 4. Load cleaned data into SQL Server
 
+---
 
+## Database Design
 
+The post-processing layer writes into separate normalized tables, for example:
+
+Master projects table
+Project details table
+Project assets table
+
+---
+
+👤 Author
+
+Sree Spoorthy G
+Data Engineer
+
+---
+
+📜 License
+
+This project is licensed under the MIT License.  
+See the `LICENSE` file for details.
+
+---
