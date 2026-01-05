@@ -129,7 +129,9 @@ This will:
 The post-processing layer writes into separate normalized tables, for example:
 
 Master projects table
+
 Project details table
+
 Project assets table
 
 ---
@@ -137,6 +139,7 @@ Project assets table
 👤 Author
 
 Sree Spoorthy G
+
 Data Engineer
 
 ---
