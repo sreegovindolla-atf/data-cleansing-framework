@@ -1,4 +1,16 @@
 QUERIES = [
+#"""UPDATE tgt
+#SET
+#    tgt.master_project_title = stg.master_project_title,
+#    tgt.project_title        = stg.project_title,
+#    tgt.asset                = stg.asset,
+#    tgt.asset_quantity       = stg.asset_quantity,
+#    tgt.asset_quantity_uom   = stg.asset_quantity_uom
+#FROM dbo.MasterTable_extracted tgt
+#JOIN dbo.MasterTable_extracted_stg stg
+#    ON tgt.[index] = stg.[index]""",
+
+
     """TRUNCATE TABLE dbo.cleaned_master_project""",
 
     """TRUNCATE TABLE dbo.cleaned_project""",

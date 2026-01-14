@@ -73,7 +73,24 @@ engine = get_sql_server_engine()
 # =====================================
 SOURCE_QUERY = """
 select *
-from dbo.denorm_MasterTable
+from dbo.MasterTableDenormalizedCleanedFinal
+where [index] = 'ABZ-2016-006'
+--where [index] = 'ABZ-2016-006' or
+--[index] = 'ADFD-1991-002' or
+--[index] = 'ADFD-1997-006' or
+--[index] = 'ADFD-2016-060' or
+--[index] = 'ADFD-2016-164' or
+--[index] = 'DCA-2011-144' or
+--[index] = 'DCA-2023-0028' or
+--[index] = 'DCA-2023-0051' or
+--[index] = 'DCA-2023-0084' or
+--[index] = 'DCA-2023-0115' or
+--[index] = 'DCA-2023-0131' or
+--[index] = 'DCA-2023-0153' or
+--[index] = 'DCA-2023-0196' or
+--[index] = 'DCA-2023-0243' or
+--[index] = 'DCA-2023-0291' or
+--[index] = 'DCA-2023-0383'
 """
 
 df_input = pd.read_sql(SOURCE_QUERY, engine)

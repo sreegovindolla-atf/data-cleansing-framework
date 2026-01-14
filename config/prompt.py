@@ -48,7 +48,6 @@ Extract the following fields as labeled spans from the input text.
 
 Single per document:
 - master_project_title
-- master_project_amount_extracted
 
 Repeatable (one per project OR master-level when applicable):
 - project_title
@@ -56,10 +55,16 @@ Repeatable (one per project OR master-level when applicable):
 - beneficiary_group_name
 - project_amount_extracted
 
-Repeatable (can repeat multiple times for a project):
-- asset_quantity (number linked to an asset)
-- asset (the item being delivered/built)
-- asset_quantity_uom (unit of measure for the asset_quantity)
+Repeatable (can repeat multiple times per project):
+  Assets (physical constructions or major deliverables):
+  - asset
+  - asset_category
+  - asset_quantity
+  Items (non-asset tangible goods or consumables):
+  - item
+  - item_category
+  - item_quantity
+  - item_quantity_uom
 
 Mandatory fields:
 - master_project_title  
@@ -117,35 +122,74 @@ CRITICAL RULES:
 - When in doubt, prefer fewer project_title entries rather than over-splitting.
 
 2) Asset Rules:
-- Asset pairing rules:
-   - Each asset_quantity must correspond to the nearest matching asset in the text.
-   - Each asset_quantity_uom must correspond to that asset_quantity.
+- What qualifies as an asset:
+- Extract an asset ONLY when the text describes:
+ - Physical construction or creation of a fixed structure, such as:
+    construction / building / rehabilitation / expansion of:
+      mosques
+      schools
+      hospitals
+      houses
+      clinics
+      wells
+      roads
+      buildings
+      shelters
 
-- Asset tangibility rules (very important):
+  - In these cases:
+    - asset = the most specific description (e.g., Small Mosque, Grand Mosque, Primary School Building, etc.)
+    - asset_category = the generic categorical type (e.g., Mosque, School, Hospital, etc.)
+    - asset_quantity = the number of assets being built or constructed(e.g., 1, 2, etc.)
 
-    - Extract ONLY tangible, concrete assets that can be physically delivered, constructed, installed, transported, or directly quantified.
+   - Examples:
+    Small Mosque → Mosque
+    Grand Mosque → Mosque
+    Girls' Primary School → School
+    Residential House → House
 
-    - Do NOT extract intangible activities, services, or abstract support mechanisms as assets, such as:
-      - services, training, education, awareness, sensitization
-      - support, assistance, facilitation, extension services
-      - financial mechanisms, financing models, advisory services, capacity building
+Asset category rules:
+  - asset_category MUST be singular, generic, standardized
+  - asset_category MUST NOT contain adjectives, sizes, locations, or qualifiers.
 
-    - Exception:
-      - If a financial or material instrument is explicitly described as a concrete deliverable
-        (e.g., "cash grants", "agricultural finance disbursed", "loans provided", "vouchers", "e-vouchers"),
-        THEN it may be extracted as an asset.
-      - In such cases, prefer the most concrete representation (e.g., "Agricultural Finance", "Cash Grant", "Voucher")
-        and ignore accompanying abstract services.
+3) Item Rules:
+- What qualifies as an item:
+  - Extract an item when the text describes tangible goods or consumables that are:
+      movable
+      distributable
+      not permanent physical constructions
 
-    - When multiple items are listed and some are tangible while others are intangible,
-      extract ONLY the tangible assets and omit the intangible ones.
+  - Examples of items:
+      furniture
+      food baskets
+      rice, wheat, flour
+      medical equipment
+      school supplies
+      treatment, medicines
+      relief kits (when not part of a larger constructed asset)
 
-3) Beneficiary count extraction rules:
+  - In these cases:
+    - item = the most specific description (e.g., Wooden Furniture, Winter Food Basket)
+    - item_category = a generic categorical type (e.g., Furniture, Food, etc.)
+    - item_quantity = the number of items being distributed, etc. (e.g., 100, 2000, etc.)
+    - item_quantity_uom = the unit of measurement for the items (e.g., Kilograms, Liters, Unit, etc.)
+
+  - Examples:
+      Wooden Furniture → Furniture
+      Food Basket → Food
+      Medical Equipment → Healthcare
+      Treatment → Healthcare
+
+4) Asset vs Item Decision Rule (CRITICAL):
+  - If something is constructed or built, treat it as an asset.
+  - If something is distributed or provided, treat it as an item.
+  - Never extract the same thing as both an asset and an item.
+
+5) Beneficiary count extraction rules:
     - If beneficiary_count is expressed as “X per [unit]” (e.g., “60 students per school”) 
     and the text states the number of those units (e.g., “4 schools”), 
-    then output the total beneficiaries as X × number_of_units (e.g., 60×4 = 240)
+    then output the total beneficiaries as X x number_of_units (e.g., 60x4 = 240)
 
-4) Do NOT extract components when a parent package/kit is present:
+6) Do NOT extract components when a parent package/kit is present:
    - If the text explicitly mentions a parent container such as a package/basket/kit/parcel/mosque/school/hospital (e.g., "food package", "food basket", "winter package", "hygiene kit", "relief kit", "food parcel", "a mosque", "a school", "a hospital"),
      and then lists its contents (e.g., in parentheses or after words like "contains", "including", "consisting of", "composed of", "includes", "containing", "construction of"),
      THEN extract ONLY the parent container as the asset.
@@ -153,11 +197,11 @@ CRITICAL RULES:
    - Exception: If the contents are explicitly stated as separate deliveries outside the package (e.g., "food package + rice + sugar distributed separately"),
      then you may extract them separately.
 
-5) When to extract individual items:
+7) When to extract individual items:
    - If there is NO parent container mentioned (no package/basket/kit/parcel/hospital/mosque/school), and the text lists items being delivered (e.g., "distributed rice, sugar, oil, constructed ablution seats, beds, rooms"),
      then extract each item as its own asset (with quantities/uom if present).
 
-6) Output format:
+8) Output format:
    - extraction_text MUST be a string, integer, or float (never null, never a list/dict).
    - If a field is not explicitly present, DO NOT output an extraction for it EXCEPT mandatory fields (master_project_title, project_title), which must always be produced using fallback rules.
    - Do not use attributes for now (leave attributes empty).
@@ -171,7 +215,7 @@ CRITICAL RULES:
     - "extraction_text": string or number (never null, never list/dict)
     - "extraction_index": integer (order in which you found it; start at 0 and increment)
 
-7) MANDATORY FALLBACK RULE (critical):
+9) MANDATORY FALLBACK RULE (critical):
 
 - master_project_title and project_title MUST ALWAYS be present.
 - If the input text is short, generic, or does not explicitly describe a project:
@@ -182,10 +226,10 @@ CRITICAL RULES:
     - one master_project_title
     - one project_title
 
-8) Amount extraction rules (IMPORTANT):
+10) Amount extraction rules (IMPORTANT):
 
 AMOUNT RULES (IMPORTANT):
-- Extract amounts when they are explicitly mentioned in the text (Title or Description).
+- Extract the project amount when they are explicitly mentioned in the text (Title or Description).
 - extraction_text must be numeric (int/float). Do NOT include currency symbols or words.
   Examples:
     "AED 1,200,000" -> 1200000

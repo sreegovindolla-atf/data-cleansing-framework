@@ -50,8 +50,7 @@ def get_sql_server_engine():
     return create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
 
 TARGET_SCHEMA = "dbo"
-TARGET_TABLE  = "MasterTable_extracted"
-
+TARGET_TABLE  = "MasterTable_extracted_stg"
 
 # -----------------------
 # main parsing
@@ -97,12 +96,6 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                 master_project_title = smart_title_case(x["val"])
                 break
 
-        master_project_amount_extracted = None
-        for x in exs:
-            if x["cls"] == "master_project_amount_extracted":
-                master_project_amount_extracted = to_float_or_none(x["val"])
-                break
-
         global_ben_count = None
         global_ben_group = None
         project_ben = {}
@@ -115,10 +108,17 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
         current_project_title = None
 
         current_asset = None
-        pending_qty = None
-        pending_uom = None
+        pending_asset_qty = None
+        pending_asset_category = None
+        #pending_uom = None
+
+        current_item = None
+        pending_item_qty = None
+        pending_item_category = None
+        pending_item_uom = None
 
         projects_with_assets = set()
+        projects_with_items = set()
         seen_projects_in_doc = []
 
         # track row indices so we can backfill even if amount appears later
@@ -160,6 +160,11 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                     projects_with_assets.add(current_asset["project_code"])
                     current_asset = None
 
+                if current_item is not None:
+                    append_row(current_item)
+                    projects_with_items.add(current_item["project_code"])
+                    current_item = None
+
                 project_counter += 1
                 current_project_title = smart_title_case(val)
                 current_project_code = fmt_prj(master_project_code, project_counter)
@@ -168,8 +173,14 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                 project_ben[current_project_code] = {"beneficiary_count": None, "beneficiary_group_name": None}
                 project_amount_extracted_map.setdefault(current_project_code, None)
 
-                pending_qty = None
-                pending_uom = None
+                pending_asset_qty = None
+                pending_asset_category = None
+                #pending_uom = None
+
+                pending_item_qty = None
+                pending_item_category = None
+                pending_item_uom = None
+                
                 continue
 
             # beneficiaries
@@ -201,13 +212,21 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                         project_amount_extracted_map[current_project_code] = a
                     backfill_project_amount_extracted(current_project_code, a)
 
-                    # if an asset row is currently open, update it too
+                    # if an asset row or item row is currently open, update it too
                     if (
                         current_asset is not None
                         and current_asset.get("project_code") == current_project_code
                         and is_missing_or_bad(current_asset.get("project_amount_extracted"))
                     ):
                         current_asset["project_amount_extracted"] = a
+                    
+                    if (
+                        current_item is not None
+                        and current_item.get("project_code") == current_project_code
+                        and is_missing_or_bad(current_item.get("project_amount_extracted"))
+                    ):
+                        current_item["project_amount_extracted"] = a
+
                 continue
 
             # assets
@@ -225,7 +244,6 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                     "master_project_code": master_project_code,
                     "master_project_title": master_project_title,
                     "master_project_amount_actual": master_project_amount_actual,
-                    "master_project_amount_extracted": master_project_amount_extracted,
                     "master_project_oda_amount": master_project_oda_amount,
                     "master_project_ge_amount": master_project_ge_amount,
                     "master_project_off_amount": master_project_off_amount,
@@ -234,18 +252,74 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                     "beneficiary_count": ben_count,
                     "beneficiary_group_name": ben_group,
                     "asset": smart_title_case(val),
+                    "asset_category": None,
                     "asset_quantity": None,
-                    "asset_quantity_uom": None,
+                    "asset_quantity_uom": "Unit",
+                    "item": None,
+                    "item_category": None,
+                    "item_quantity": None,
+                    "item_quantity_uom": None,
                     "project_amount_extracted": amt_extr,
                     "input_text": text,
                 }
 
-                if pending_qty is not None:
-                    current_asset["asset_quantity"] = pending_qty
-                    pending_qty = None
-                if pending_uom is not None:
-                    current_asset["asset_quantity_uom"] = pending_uom
-                    pending_uom = None
+                if pending_asset_qty is not None:
+                    current_asset["asset_quantity"] = pending_asset_qty
+                    pending_asset_qty = None
+                if pending_asset_category is not None:
+                    current_asset["asset_category"] = pending_asset_category
+                    pending_asset_category = None
+                #if pending_uom is not None:
+                #    current_asset["asset_quantity_uom"] = pending_uom
+                #    pending_uom = None
+                continue
+
+            # items
+            if cls in ("item", "items"):
+                if current_item is not None:
+                    append_row(current_item)
+                    projects_with_items.add(current_item["project_code"])
+                    current_item = None
+
+                ben_count, ben_group = get_ben(current_project_code)
+                amt_extr = get_project_amt_extracted(current_project_code)
+
+                current_item = {
+                    "index": index,
+                    "master_project_code": master_project_code,
+                    "master_project_title": master_project_title,
+                    "master_project_amount_actual": master_project_amount_actual,
+                    "master_project_oda_amount": master_project_oda_amount,
+                    "master_project_ge_amount": master_project_ge_amount,
+                    "master_project_off_amount": master_project_off_amount,
+                    "project_code": current_project_code,
+                    "project_title": current_project_title,
+                    "beneficiary_count": ben_count,
+                    "beneficiary_group_name": ben_group,
+                    "asset": None,
+                    "asset_category": None,
+                    "asset_quantity": None,
+                    "asset_quantity_uom": None,
+                    "item": smart_title_case(val),
+                    "item_category": None,
+                    "item_quantity": None,
+                    "item_quantity_uom": None,
+                    "project_amount_extracted": amt_extr,
+                    "input_text": text,
+                }
+
+                if pending_item_qty is not None:
+                    current_item["item_quantity"] = pending_item_qty
+                    pending_item_qty = None
+
+                if pending_item_category is not None:
+                    current_item["item_category"] = pending_item_category
+                    pending_item_category = None
+
+                if pending_item_uom is not None:
+                    current_item["item_quantity_uom"] = pending_item_uom
+                    pending_item_uom = None
+
                 continue
 
             if cls == "asset_quantity":
@@ -253,22 +327,53 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                 if current_asset is not None:
                     current_asset["asset_quantity"] = qty
                 else:
-                    pending_qty = qty
+                    pending_asset_qty = qty
+                continue
+            
+            if cls == "asset_category":
+                category = smart_title_case(val)
+                if current_asset is not None:
+                    current_asset["asset_category"] = category
+                else:
+                    pending_asset_category = category
                 continue
 
-            if cls in ("asset_quantity_uom", "uom", "unit_of_measure", "unit"):
-                uom = smart_title_case(val)
-                if current_asset is not None:
-                    current_asset["asset_quantity_uom"] = uom
+            if cls == "item_quantity":
+                qty = to_int_or_none(val)
+                if current_item is not None:
+                    current_item["item_quantity"] = qty
                 else:
-                    pending_uom = uom
+                    pending_item_qty = qty
                 continue
+            
+            if cls == "item_category":
+                category = smart_title_case(val)
+                if current_item is not None:
+                    current_item["item_category"] = category
+                else:
+                    pending_item_category = category
+                continue
+
+            if cls in ("item_quantity_uom",):
+                uom = smart_title_case(val)
+                if current_item is not None:
+                    current_item["item_quantity_uom"] = uom
+                else:
+                    pending_item_uom = uom
+                continue
+
 
         # flush last asset
         if current_asset is not None:
             append_row(current_asset)
             projects_with_assets.add(current_asset["project_code"])
             current_asset = None
+
+        # flush last item
+        if current_item is not None:
+            append_row(current_item)
+            projects_with_items.add(current_item["project_code"])
+            current_item = None
 
         # backfill ALL rows for projects that got amount captured
         for prj_code, amt in project_amount_extracted_map.items():
@@ -283,9 +388,9 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
             project_ben[current_project_code] = {"beneficiary_count": global_ben_count, "beneficiary_group_name": global_ben_group}
             project_amount_extracted_map[current_project_code] = None
 
-        # stub rows for projects with no assets
+        # stub rows only if project has neither assets nor items
         for prj_code, prj_title in seen_projects_in_doc:
-            if prj_code not in projects_with_assets:
+            if (prj_code not in projects_with_assets) and (prj_code not in projects_with_items):
                 bc = project_ben.get(prj_code, {}).get("beneficiary_count") or global_ben_count
                 bg = project_ben.get(prj_code, {}).get("beneficiary_group_name") or global_ben_group
 
@@ -294,7 +399,6 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                     "master_project_code": master_project_code,
                     "master_project_title": master_project_title,
                     "master_project_amount_actual": master_project_amount_actual,
-                    "master_project_amount_extracted": master_project_amount_extracted,
                     "master_project_oda_amount": master_project_oda_amount,
                     "master_project_ge_amount": master_project_ge_amount,
                     "master_project_off_amount": master_project_off_amount,
@@ -303,8 +407,13 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                     "beneficiary_count": bc,
                     "beneficiary_group_name": bg,
                     "asset": None,
+                    "asset_category": None,
                     "asset_quantity": None,
                     "asset_quantity_uom": None,
+                    "item": None,
+                    "item_category": None,
+                    "item_quantity": None,
+                    "item_quantity_uom": None,
                     "project_amount_extracted": project_amount_extracted_map.get(prj_code),
                     "input_text": text,
                 })
@@ -319,7 +428,6 @@ df["master_project_amount_actual"] = pd.to_numeric(df.get("master_project_amount
 df["master_project_oda_amount"] = pd.to_numeric(df.get("master_project_oda_amount"), errors="coerce")
 df["master_project_ge_amount"] = pd.to_numeric(df.get("master_project_ge_amount"), errors="coerce")
 df["master_project_off_amount"] = pd.to_numeric(df.get("master_project_off_amount"), errors="coerce")
-df["master_project_amount_extracted"] = pd.to_numeric(df.get("master_project_amount_extracted"), errors="coerce")
 df["project_amount_extracted"] = pd.to_numeric(df.get("project_amount_extracted"), errors="coerce")
 
 # number of unique projects per master
@@ -347,6 +455,9 @@ df.loc[df["master_project_oda_amount"].apply(is_missing_or_bad), "project_oda_am
 df.loc[df["master_project_ge_amount"].apply(is_missing_or_bad), "project_ge_amount"] = pd.NA
 df.loc[df["master_project_off_amount"].apply(is_missing_or_bad), "project_off_amount"] = pd.NA
 
+# Optional safety: set asset_quantity_uom to Unit when asset is not null
+df.loc[df["asset"].notna(), "asset_quantity_uom"] = "Unit"
+
 df.drop(columns=["_project_count"], inplace=True)
 
 FINAL_COLUMNS = [
@@ -358,11 +469,15 @@ FINAL_COLUMNS = [
     "beneficiary_count",
     "beneficiary_group_name",
     "asset",
+    "asset_category",
     "asset_quantity",
     "asset_quantity_uom",
+    "item",
+    "item_category",
+    "item_quantity",
+    "item_quantity_uom",
     "input_text",
     "master_project_amount_actual",
-    "master_project_amount_extracted",
     "master_project_oda_amount",
     "master_project_ge_amount",
     "master_project_off_amount",
@@ -392,7 +507,7 @@ df.to_sql(
     TARGET_TABLE,
     engine,
     schema=TARGET_SCHEMA,
-    if_exists="append",
+    if_exists="replace",
     index=False,
     chunksize=500,
 )
@@ -403,6 +518,6 @@ print("Rows written:", len(df))
 print("Non-null counts:\n", df.notna().sum())
 
 # Split the output into 3 different tables - master projects table, projects table, projects-assets table
-with engine.begin() as conn:
-    for q in QUERIES:
-        conn.execute(sql_text(q))
+#with engine.begin() as conn:
+#    for q in QUERIES:
+#        conn.execute(sql_text(q))
