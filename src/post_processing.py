@@ -110,6 +110,8 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
         current_asset = None
         pending_asset_qty = None
         pending_asset_category = None
+        pending_asset_capacity = None
+        pending_asset_capacity_uom = None
         #pending_uom = None
 
         current_item = None
@@ -175,6 +177,8 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
 
                 pending_asset_qty = None
                 pending_asset_category = None
+                pending_asset_capacity = None
+                pending_asset_capacity_uom = None
                 #pending_uom = None
 
                 pending_item_qty = None
@@ -255,6 +259,8 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                     "asset_category": None,
                     "asset_quantity": None,
                     "asset_quantity_uom": "Unit",
+                    "asset_capacity": None,
+                    "asset_capacity_uom": None,
                     "item": None,
                     "item_category": None,
                     "item_quantity": None,
@@ -269,6 +275,12 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                 if pending_asset_category is not None:
                     current_asset["asset_category"] = pending_asset_category
                     pending_asset_category = None
+                if pending_asset_capacity is not None:
+                    current_asset["asset_capacity"] = pending_asset_capacity
+                    pending_asset_capacity = None
+                if pending_asset_capacity_uom is not None:
+                    current_asset["asset_capacity_uom"] = pending_asset_capacity_uom
+                    pending_asset_capacity_uom = None
                 #if pending_uom is not None:
                 #    current_asset["asset_quantity_uom"] = pending_uom
                 #    pending_uom = None
@@ -300,6 +312,8 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                     "asset_category": None,
                     "asset_quantity": None,
                     "asset_quantity_uom": None,
+                    "asset_capacity": None,
+                    "asset_capacity_uom": None,
                     "item": smart_title_case(val),
                     "item_category": None,
                     "item_quantity": None,
@@ -337,6 +351,22 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                 else:
                     pending_asset_category = category
                 continue
+            
+            if cls == "asset_capacity":
+                capacity = to_float_or_none(val)
+                if current_asset is not None:
+                    current_asset["asset_capacity"] = capacity
+                else:
+                    pending_asset_capacity = capacity
+                continue
+
+            if cls == "asset_capacity_uom":
+                capacity_uom = val
+                if current_asset is not None:
+                    current_asset["asset_capacity_uom"] = capacity_uom
+                else:
+                    pending_asset_capacity_uom = capacity_uom
+                continue
 
             if cls == "item_quantity":
                 qty = to_int_or_none(val)
@@ -355,7 +385,7 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                 continue
 
             if cls in ("item_quantity_uom",):
-                uom = smart_title_case(val)
+                uom = val
                 if current_item is not None:
                     current_item["item_quantity_uom"] = uom
                 else:
@@ -410,6 +440,8 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                     "asset_category": None,
                     "asset_quantity": None,
                     "asset_quantity_uom": None,
+                    "asset_capacity": None,
+                    "asset_capacity_uom": None,
                     "item": None,
                     "item_category": None,
                     "item_quantity": None,
@@ -472,6 +504,8 @@ FINAL_COLUMNS = [
     "asset_category",
     "asset_quantity",
     "asset_quantity_uom",
+    "asset_capacity",
+    "asset_capacity_uom",
     "item",
     "item_category",
     "item_quantity",

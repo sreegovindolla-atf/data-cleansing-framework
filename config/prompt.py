@@ -60,6 +60,8 @@ Repeatable (can repeat multiple times per project):
   - asset
   - asset_category
   - asset_quantity
+  - asset_capacity
+  - asset_capacity_uom
   Items (non-asset tangible goods or consumables):
   - item
   - item_category
@@ -151,6 +153,29 @@ Asset category rules:
   - asset_category MUST be singular, generic, standardized
   - asset_category MUST NOT contain adjectives, sizes, locations, or qualifiers.
 
+Capacity extraction rules:
+  - Extract capacity ONLY when it represents a technical/physical/equipment/storage/output capacity, such as:
+   - tanks/containers/storage: gallons, liters, L, m3, cubic meters
+   - generators/electrical: kVA, kva, kW, kw, watts, W
+   - similar measurable technical capacities explicitly tied to an asset/system
+
+  - Capacity should be extracted when phrased like:
+   - "capacity of 522 gallons"
+   - "capacity: 3 kVA"
+   - "water tank ... capacity of 1000 liters"
+
+  - DO NOT extract capacity when it describes people occupancy or attendance capacity, because that is beneficiary_count instead.
+   - Exclude units/terms like: worshippers, people, persons, attendees, students, patients, families, households (when used as “capacity of X …”).
+   - Examples to exclude:
+     - "prayer hall with a capacity of 60 worshippers"  -> asset_capacity = NULL, asset_capacity_uom = NULL
+     - "mosque with a capacity of 60 worshippers"       -> asset_capacity = NULL, asset_capacity_uom = NULL
+   - Hard exclusion: If the word immediately following the capacity number is a human-group term (worshippers/people/persons/etc.), do not extract capacity.
+
+  - Output formatting constraints:
+    - asset_capacity: return only the number (e.g., 522, 3, 1000)
+    - asset_capacity_uom: return only the unit (e.g., Gallon, kVA, Liter); return in the singluar form
+    - If capacity is not present or excluded by rules, return null for both fields.
+
 3) Item Rules:
 - What qualifies as an item:
   - Extract an item when the text describes tangible goods or consumables that are:
@@ -235,5 +260,4 @@ AMOUNT RULES (IMPORTANT):
     "AED 1,200,000" -> 1200000
     "USD 2.5 million" -> 2500000
 - These may appear at master level or per project; extract whatever is stated.
-
 """)

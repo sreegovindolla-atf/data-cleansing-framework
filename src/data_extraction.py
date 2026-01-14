@@ -74,23 +74,15 @@ engine = get_sql_server_engine()
 SOURCE_QUERY = """
 select *
 from dbo.MasterTableDenormalizedCleanedFinal
-where [index] = 'ABZ-2016-006'
---where [index] = 'ABZ-2016-006' or
---[index] = 'ADFD-1991-002' or
---[index] = 'ADFD-1997-006' or
---[index] = 'ADFD-2016-060' or
---[index] = 'ADFD-2016-164' or
---[index] = 'DCA-2011-144' or
---[index] = 'DCA-2023-0028' or
---[index] = 'DCA-2023-0051' or
---[index] = 'DCA-2023-0084' or
---[index] = 'DCA-2023-0115' or
---[index] = 'DCA-2023-0131' or
---[index] = 'DCA-2023-0153' or
---[index] = 'DCA-2023-0196' or
---[index] = 'DCA-2023-0243' or
---[index] = 'DCA-2023-0291' or
---[index] = 'DCA-2023-0383'
+where [index] = 'DCA-2016-051' or
+[index] = 'DCA-2023-0483' or
+[index] = 'DCA-2024-0157' or
+[index] = 'DCA-2024-0188' or
+[index] = 'DCA-2024-0246' or
+[index] = 'DCA-2024-0283' or
+[index] = 'DCA-2024-0739' or
+[index] = 'DCA-2024-0761' or
+[index] = 'DCA-2024-0378'
 """
 
 df_input = pd.read_sql(SOURCE_QUERY, engine)
@@ -109,22 +101,22 @@ cache = load_cache(CACHE_PKL)
 print(f"[INFO] Loaded cache entries: {len(cache)} from {CACHE_PKL.name}")
 
 for i, row in enumerate(df_input.itertuples(index=False), start=1):
-    title = safe_str(getattr(row, "ProjectTitleEnglish", "") or "").strip()
-    description = safe_str(getattr(row, "DescriptionEnglish", "") or "").strip()
+    title_en = safe_str(getattr(row, "ProjectTitleEnglish", "") or "").strip()
+    description_en = safe_str(getattr(row, "DescriptionEnglish", "") or "").strip()
 
-    if title != description:
-        text = f"{title} ; Description: {description}"
+    if title_en != description_en:
+        text_en = f"{title_en} ; Description: {description_en}"
     else:
-        text = title
+        text_en = title_en
 
-    text = normalize_text(text)
+    text_en = normalize_text(text_en)
 
-    if text is None:
-        text = ""
+    if text_en is None:
+        text_en = ""
 
-    text = str(text).strip()
+    text_en = str(text_en).strip()
 
-    if not text:
+    if not text_en:
         continue
 
     index = getattr(row, "Index", None)
@@ -134,13 +126,13 @@ for i, row in enumerate(df_input.itertuples(index=False), start=1):
     master_project_ge_amount = getattr(row, "GE_Amount", None)
     master_project_off_amount = getattr(row, "OFF_Amount", None)
     
-    h = text_hash(text)
+    h = text_hash(text_en)
 
     if h in cache:
         result = cache[h]
     else:
         result = lx.extract(
-            text_or_documents=text,
+            text_or_documents=text_en,
             prompt_description=PROMPT,
             examples=EXAMPLES,
             model_id="gpt-4.1-mini",
