@@ -1,61 +1,62 @@
 QUERIES = [
-#"""UPDATE tgt
-#SET
-#    tgt.master_project_title = stg.master_project_title,
-#    tgt.project_title        = stg.project_title,
-#    tgt.asset                = stg.asset,
-#    tgt.asset_quantity       = stg.asset_quantity,
-#    tgt.asset_quantity_uom   = stg.asset_quantity_uom
-#FROM dbo.MasterTable_extracted tgt
-#JOIN dbo.MasterTable_extracted_stg stg
-#    ON tgt.[index] = stg.[index]""",
+    """TRUNCATE TABLE silver.cleaned_master_project""",
 
+    """TRUNCATE TABLE silver.cleaned_project""",
 
-    """TRUNCATE TABLE dbo.cleaned_master_project""",
+    """TRUNCATE TABLE silver.cleaned_project_asset""",
 
-    """TRUNCATE TABLE dbo.cleaned_project""",
-
-    """TRUNCATE TABLE dbo.cleaned_project_asset""",
-
-    """INSERT INTO dbo.cleaned_master_project
+    """INSERT INTO silver.cleaned_master_project
        SELECT DISTINCT
            [Index],
            master_project_code,
-           master_project_title,
+           master_project_title_en,
+           master_project_title_ar,
+           input_text,
            master_project_amount_actual,
-           master_project_amount_extracted,
            master_project_oda_amount,
            master_project_ge_amount,
-           input_text
-       FROM dbo.MasterTable_extracted""",
+           master_project_off_amount
+       FROM silver.MasterTable_extracted""",
 
-    """INSERT INTO dbo.cleaned_project
+    """INSERT INTO silver.cleaned_project
        SELECT DISTINCT
            [Index],
-           project_code,
-           project_title,
            master_project_code,
-           master_project_title,
+           project_code,
+           project_title_en,
+           project_title_ar,
+           project_description_en,
+           project_description_ar,
            beneficiary_count,
            beneficiary_group_name,
+           input_text,
            project_amount_actual,
            project_amount_extracted,
            project_oda_amount,
            project_ge_amount,
-           input_text
-       FROM dbo.MasterTable_extracted""",
+           project_off_amount
+       FROM silver.MasterTable_extracted""",
 
-    """INSERT INTO dbo.cleaned_project_asset
+    """INSERT INTO silver.cleaned_project_asset
        SELECT DISTINCT
            [Index],
-           CONCAT(project_code, '-', asset)         AS project_asset_code,
-           project_code,
-           project_title,
            master_project_code,
-           master_project_title,
+           project_code,
+           CONCAT(project_code, '-', asset)         AS project_asset_code,
+           project_title_en,
+           project_title_ar,
+           project_description_en,
+           project_description_ar,
            asset,
+           asset_category,
            asset_quantity,
            asset_quantity_uom,
+           asset_capacity,
+           asset_capacity_uom,
+           item,
+           item_category,
+           item_quantity,
+           item_quantity_uom,
            input_text
-       FROM dbo.MasterTable_extracted"""
+       FROM silver.MasterTable_extracted"""
 ]

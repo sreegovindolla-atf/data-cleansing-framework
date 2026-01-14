@@ -32,9 +32,9 @@ from utils.extraction_helpers import (
     save_cache,
     annotated_to_dict,
     save_results_with_master_project_amount,
-    safe_str
+    safe_str,
+    build_labeled_bilingual_input
 )
-
 
 # -----------------------
 # args + output paths
@@ -59,7 +59,7 @@ CACHE_PKL = RUN_OUTPUT_DIR / f"{RUN_ID}_lx_cache.pkl"
 def get_sql_server_engine():
     params = urllib.parse.quote_plus(
         "DRIVER={ODBC Driver 17 for SQL Server};"
-        "SERVER=SREESPOORTHY\SQLEXPRESS01;"
+        "SERVER=SREESPOORTHY\\SQLEXPRESS01;"
         "DATABASE=ForeignAidDatabase_2019;"
         "Trusted_Connection=yes;"
         "TrustServerCertificate=yes;"
@@ -74,15 +74,6 @@ engine = get_sql_server_engine()
 SOURCE_QUERY = """
 select *
 from dbo.MasterTableDenormalizedCleanedFinal
-where [index] = 'DCA-2016-051' or
-[index] = 'DCA-2023-0483' or
-[index] = 'DCA-2024-0157' or
-[index] = 'DCA-2024-0188' or
-[index] = 'DCA-2024-0246' or
-[index] = 'DCA-2024-0283' or
-[index] = 'DCA-2024-0739' or
-[index] = 'DCA-2024-0761' or
-[index] = 'DCA-2024-0378'
 """
 
 df_input = pd.read_sql(SOURCE_QUERY, engine)
@@ -94,45 +85,43 @@ EXAMPLES = INFRA_EXAMPLES + DIST_EXAMPLES + SERV_EXAMPLES
 # -----------------------
 CHECKPOINT_EVERY = 50
 
-# Store tuples
-all_results_with_amount = []  # [(AnnotatedDocument, raw_amount), ...]
+all_results_with_amount = []
 
 cache = load_cache(CACHE_PKL)
 print(f"[INFO] Loaded cache entries: {len(cache)} from {CACHE_PKL.name}")
 
 for i, row in enumerate(df_input.itertuples(index=False), start=1):
-    title_en = safe_str(getattr(row, "ProjectTitleEnglish", "") or "").strip()
-    description_en = safe_str(getattr(row, "DescriptionEnglish", "") or "").strip()
+    title_en = safe_str(getattr(row, "ProjectTitleEnglish", "") or "")
+    description_en = safe_str(getattr(row, "DescriptionEnglish", "") or "")
+    title_ar = safe_str(getattr(row, "ProjectTitleArabic", "") or "")
+    description_ar = safe_str(getattr(row, "DescriptionArabic", "") or "")
 
-    if title_en != description_en:
-        text_en = f"{title_en} ; Description: {description_en}"
-    else:
-        text_en = title_en
+    text_bilingual = build_labeled_bilingual_input(
+        title_en=title_en,
+        desc_en=description_en,
+        title_ar=title_ar,
+        desc_ar=description_ar,
+    )
 
-    text_en = normalize_text(text_en)
-
-    if text_en is None:
-        text_en = ""
-
-    text_en = str(text_en).strip()
-
-    if not text_en:
+    # Skip only if BOTH languages are empty
+    if not text_bilingual:
         continue
 
     index = getattr(row, "Index", None)
-    # raw amount from SQL row (keep as-is for now)
+
     master_project_amount_actual = getattr(row, "Amount", None)
     master_project_oda_amount = getattr(row, "ODA_Amount", None)
     master_project_ge_amount = getattr(row, "GE_Amount", None)
     master_project_off_amount = getattr(row, "OFF_Amount", None)
-    
-    h = text_hash(text_en)
+
+    # IMPORTANT: hash the bilingual text (not EN-only) so cache is correct
+    h = text_hash(text_bilingual)
 
     if h in cache:
         result = cache[h]
     else:
         result = lx.extract(
-            text_or_documents=text_en,
+            text_or_documents=text_bilingual,
             prompt_description=PROMPT,
             examples=EXAMPLES,
             model_id="gpt-4.1-mini",
@@ -141,18 +130,10 @@ for i, row in enumerate(df_input.itertuples(index=False), start=1):
             use_schema_constraints=False,
         )
 
-    #try:
-    #    result.attributes = result.attributes or {}
-    #    result.attributes.update({"index": index})
-    #    result.attributes.update({"master_project_amount_actual": master_project_amount_actual})
-    #    result.attributes.update({"master_project_oda_amount": master_project_oda_amount})
-    #    result.attributes.update({"master_project_ge_amount": master_project_ge_amount})
-    #    result.attributes.update({"master_project_off_amount": master_project_off_amount})
-    #except Exception:
-    #    pass
-
     cache[h] = result
-    all_results_with_amount.append((result, index, master_project_amount_actual, master_project_oda_amount, master_project_ge_amount, master_project_off_amount))
+    all_results_with_amount.append(
+        (result, index, master_project_amount_actual, master_project_oda_amount, master_project_ge_amount, master_project_off_amount)
+    )
 
     if i % CHECKPOINT_EVERY == 0:
         save_results_with_master_project_amount(all_results_with_amount, OUT_JSONL, OUT_JSON)

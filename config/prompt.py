@@ -1,56 +1,17 @@
 import textwrap
 
-# Project prompt focuses ONLY on project and beneficiary fields (no beneficiary fields here anymore)
-PROJECT_PROMPT = textwrap.dedent("""\
-Extract only these fields as labeled spans from the input text.
-
-Single (optional) — applies to the whole input text:
-- master_project_title
-
-Repeatable (one per project inside the master text):
-- project_title
-- beneficiary_count
-- beneficiary_group_name
-
-Rules:
-- You may output MULTIPLE project_title entries if multiple projects are listed in the same master text.
-- beneficiary_count and beneficiary_group_name are PROJECT-LEVEL fields:
-  - If the text contains beneficiaries for a specific project, extract them near that project.
-  - If the text contains only one beneficiary set for the whole input and multiple projects are listed,
-    attach that same beneficiary_count and beneficiary_group_name to each project (repeat them).
-- If beneficiary info is not explicitly present, DO NOT output it.
-- extraction_text must be string/int/float only (never null, never a list/dict).
-- Omit fields not explicitly present.
-""")
-
-# Asset prompt focuses ONLY on project and asset fields (no beneficiary fields here anymore)
-ASSET_PROMPT = textwrap.dedent("""\
-Extract only these fields from the input text as labeled spans.
-
-Repeatable (can repeat multiple times):
-- project_title            (used as a section marker for assets)
-- asset_quantity
-- asset
-- asset_quantity_uom
-
-Rules:
-- You may output MULTIPLE project_title entries if multiple projects are listed in the text.
-- Assets listed AFTER a project_title belong to that project, until the next project_title appears.
-- You may output MULTIPLE asset rows if multiple assets are listed.
-- Each asset_quantity must correspond to the nearest matching asset in the text.
-- extraction_text must be string/int/float only (never null, never a list/dict).
-- Omit fields not explicitly present.
-""")
-
-# Combined prompt (for both project beneficiary and project assests),
 PROMPT = textwrap.dedent("""\
 Extract the following fields as labeled spans from the input text.
 
 Single per document:
-- master_project_title
+- master_project_title_en
+- master_project_title_ar
 
 Repeatable (one per project OR master-level when applicable):
-- project_title
+- project_title_en
+- project_title_ar
+- project_description_en
+- project_description_ar
 - beneficiary_count
 - beneficiary_group_name
 - project_amount_extracted
@@ -69,19 +30,81 @@ Repeatable (can repeat multiple times per project):
   - item_quantity_uom
 
 Mandatory fields:
-- master_project_title  
-- project_title
+- master_project_title_en
+- master_project_title_ar
+- project_title_en
+- project_title_ar
+- project_description_en
+- project_description_ar
 
 ==================================================
 INPUT STRUCTURE (CRITICAL – READ CAREFULLY):
 ==================================================
 
-- The input text ALWAYS follows this structure:
+The input text may contain BOTH English and Arabic versions of the same record.
+It will be provided in a LABELED format such as:
 
-<Project Title>; Description: <Project Description>
+TITLE_EN: <English Project Title>
+DESC_EN: <English Project Description>
 
-- The text BEFORE "; Description:" is the TITLE SECTION
-- The text AFTER  "; Description:" is the DESCRIPTION SECTION
+TITLE_AR: <Arabic Project Title>
+DESC_AR: <Arabic Project Description>
+
+- Either language MAY be missing.
+- Treat English and Arabic as two references describing the SAME project(s).
+
+==================================================
+BILINGUAL CANONICALIZATION RULES (CRITICAL):
+==================================================
+
+You must produce TWO aligned outputs for titles/descriptions:
+- English fields: master_project_title_en, project_title_en, project_description_en
+- Arabic fields:  master_project_title_ar, project_title_ar, project_description_ar
+
+1) One meaning, two languages:
+- English and Arabic outputs MUST represent the SAME meaning and scope.
+- Do NOT output different project meanings across languages.
+
+2) Consistency:
+- If EN and AR agree, keep both aligned.
+- Do NOT duplicate extractions per language beyond the *_ar fields.
+
+3) Conflict resolution (important):
+- If EN and AR conflict:
+  - Prefer the version that is MORE specific, complete, and contextually correct.
+  - Use that as the canonical meaning.
+  - Then ensure BOTH language outputs reflect that same meaning:
+    - English fields in English
+    - Arabic fields in Arabic (translate/paraphrase as needed)
+
+4) Completeness:
+- If attributes (asset/item/beneficiary/capacity/quantities/etc.) are missing in EN but present in AR,
+  extract them using the Arabic evidence.
+- If missing in AR but present in EN, extract them using the English evidence.
+
+5) Script purity (strict):
+- master_project_title_en / project_title_en / project_description_en MUST be English only.
+- master_project_title_ar / project_title_ar / project_description_ar MUST be Arabic only.
+- Never mix Arabic and English words in the same extracted field.
+
+6) Translation fallback (mandatory):
+- If Arabic title/description is missing but English is present:
+  - Still output the *_ar fields by translating the canonical meaning to Arabic.
+- If English title/description is missing but Arabic is present:
+  - Still output the English fields by translating the canonical meaning to English.
+
+7) ARABIC FIELDS MUST BE PURE ARABIC (STRICT, NO EXCEPTIONS):
+- master_project_title_ar, project_title_ar, project_description_ar MUST contain ONLY Arabic script.
+- They MUST NOT contain any Latin letters (A-Z), numbers in Latin formatting, or Latin abbreviations.
+- If the source contains Latin brand names (e.g., "Sunshow"), you MUST transliterate them into Arabic letters.
+  Example: Sunshow -> سانشو (or سَنشو)
+- If the source contains units in Latin (gallon, liter, kVA, kW, W), translate them into Arabic:
+  gallon -> جالون
+  liter  -> لتر
+  kVA    -> كيلو فولت أمبير
+  kW     -> كيلوواط
+  W      -> واط
+- Use Arabic-Indic digits (٠١٢٣٤٥٦٧٨٩) in *_ar fields.
 
 ==================================================
 CRITICAL RULES:
@@ -90,38 +113,44 @@ CRITICAL RULES:
 1) Project Splitting Rules (very important):
 - The input text may describe ONE master project that contains MULTIPLE sub-projects.
 
-- Treat master_project_title as the overall umbrella/theme.
+- Treat master_project_title_en as the overall umbrella/theme.
 
-- Extract one project_title for EACH distinct sub-project ONLY when the text clearly describes multiple independent actions or initiatives that could reasonably be tracked, funded, or implemented separately.
+- Extract one project_title_en for EACH distinct sub-project ONLY when the text clearly describes multiple independent actions or initiatives that could reasonably be tracked, funded, or implemented separately.
 
 - Financial disambiguation rule (important):
-    - When a master project description lists multiple actions AND explicitly mentions separate monetary amounts, use the number of distinct monetary amounts as a strong signal for how many project_title entries to extract.
-    - If two distinct amounts are clearly associated with two different actions, extract two project_title entries.
-    - Do NOT create additional project_title entries for actions that do not have their own explicit amount; instead, group such actions with the most relevant amount-bearing project or keep them under the master scope.
+    - When a master project description lists multiple actions AND explicitly mentions separate monetary amounts, use the number of distinct monetary amounts as a strong signal for how many project_title_en entries to extract.
+    - If two distinct amounts are clearly associated with two different actions, extract two project_title_en entries.
+    - Do NOT create additional project_title_en entries for actions that do not have their own explicit amount; instead, group such actions with the most relevant amount-bearing project or keep them under the master scope.
 
-- Do NOT split projects based solely on punctuation, formatting, or keywords such as "+", "/", ",", parentheses, or the presence of action verbs.
-
-- Split the master project into multiple project_title entries ONLY when:
+- Split the master project into multiple project_title_en entries ONLY when:
   - The text describes separate actions applied to different targets or entities
     (e.g., different buildings, locations, beneficiary groups, or deliverables), OR
   - The text enumerates multiple activities that are conceptually independent
     (i.e., removing one activity would still leave a complete and meaningful project).
 
-- Do NOT create multiple project_title entries when:
+- NON-SPLIT RULE (IMPORTANT):
+- Do NOT create multiple project_title_en entries when:
   - Multiple words or verbs describe a single continuous scope of work,
   - Multiple components together form one unified intervention,
   - Multiple actions are tightly coupled and jointly describe how one project is executed.
+  - Do NOT split projects based solely on punctuation, formatting, or keywords such as "+", "/", ",", parentheses, or the presence of action verbs.
+- Do NOT split into multiple projects when the text describes the SAME type of intervention
+  delivered to multiple target groups or destinations (e.g., families / schools / mosques)
+  as part of one delivery or distribution activity.
+- Also do NOT split when the text lists multiple variants/specifications of the same deliverable
+  (e.g., different tank capacities like 2000 liters and 500 gallons) unless the text explicitly
+  states they are separate projects, separate implementations, or separate budgets.
 
 - Text after "; Description:" MAY be used to extract
-  master_project_title and project_title if it provides clearer meaning.
+  master_project_title_en and project_title_en if it provides clearer meaning.
 
 - HOWEVER:
-  - master_project_title and project_title MUST NOT include
+  - master_project_title_en and project_title_en MUST NOT include
     the literal string "Description:" or the delimiter "; Description:".
   - When using description text for titles, extract ONLY the meaningful
     content and REMOVE the label completely.
 
-- When in doubt, prefer fewer project_title entries rather than over-splitting.
+- When in doubt, prefer fewer project_title_en entries rather than over-splitting.
 
 2) Asset Rules:
 - What qualifies as an asset:
@@ -158,6 +187,8 @@ Capacity extraction rules:
    - tanks/containers/storage: gallons, liters, L, m3, cubic meters
    - generators/electrical: kVA, kva, kW, kw, watts, W
    - similar measurable technical capacities explicitly tied to an asset/system
+   - For any single asset, extract at most one capacity.
+   - If the same asset's capacity is expressed multiple times or in different units (e.g., liters and gallons), select only one capacity-unit pair and ignore the rest.
 
   - Capacity should be extracted when phrased like:
    - "capacity of 522 gallons"
@@ -228,7 +259,7 @@ Capacity extraction rules:
 
 8) Output format:
    - extraction_text MUST be a string, integer, or float (never null, never a list/dict).
-   - If a field is not explicitly present, DO NOT output an extraction for it EXCEPT mandatory fields (master_project_title, project_title), which must always be produced using fallback rules.
+   - If a field is not explicitly present, DO NOT output an extraction for it EXCEPT mandatory fields (master_project_title_en, project_title_en), which must always be produced using fallback rules.
    - Do not use attributes for now (leave attributes empty).
     - Return ONLY valid JSON (no markdown, no commentary).
     - The top-level JSON MUST have exactly these keys:
@@ -242,14 +273,14 @@ Capacity extraction rules:
 
 9) MANDATORY FALLBACK RULE (critical):
 
-- master_project_title and project_title MUST ALWAYS be present.
+- master_project_title_en and project_title_en MUST ALWAYS be present.
 - If the input text is short, generic, or does not explicitly describe a project:
-    - Use the full input text verbatim as master_project_title.
-    - Use the same value as project_title.
+    - Use the full input text verbatim as master_project_title_en.
+    - Use the same value as project_title_en.
 - Do NOT return an empty extractions list.
 - At minimum, always return:
-    - one master_project_title
-    - one project_title
+    - one master_project_title_en
+    - one project_title_en
 
 10) Amount extraction rules (IMPORTANT):
 
@@ -260,4 +291,35 @@ AMOUNT RULES (IMPORTANT):
     "AED 1,200,000" -> 1200000
     "USD 2.5 million" -> 2500000
 - These may appear at master level or per project; extract whatever is stated.
+
+11) Project Title Description Rules:
+- For EACH extracted project_title_en, also extract a project_description_en.
+- project_description_en MUST be a comprehensive, self-contained description of the project scope.
+- It SHOULD clearly explain:
+  - what is being done (construction, distribution, rehabilitation, provision, etc.)
+  - what is being delivered or built (assets/items)
+  - key quantities or capacities (if present)
+  - intended purpose or outcome (if stated)
+  - relevant beneficiaries or target group (if clearly tied to the project)
+  - and any other information that is available
+
+- Use BOTH:
+  - the TITLE SECTION, and
+  - the relevant parts of the DESCRIPTION SECTION
+  to construct the most accurate and complete description for that specific project.
+
+- If the master text contains multiple projects:
+  - Each project_description_en must include ONLY the information relevant to that project.
+  - Do NOT mix scopes across different projects.
+
+- Do NOT include:
+  - the literal strings "Description:" or "; Description:"
+  - unrelated background or generic text
+
+- If the text is very short or minimal:
+  - project_description_en may closely resemble project_title_en,
+    but MUST still be a complete sentence describing the project.
+
+- project_description_en is MANDATORY for each project_title_en.
+
 """)

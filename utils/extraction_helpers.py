@@ -190,3 +190,35 @@ def save_results_with_master_project_amount(results_with_amount, jsonl_path: Pat
 
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(docs, f, ensure_ascii=False, indent=2)
+
+
+def build_labeled_bilingual_input(
+    title_en: str,
+    desc_en: str,
+    title_ar: str,
+    desc_ar: str,
+) -> str:
+    """
+    Build the labeled bilingual text expected by the prompt.
+
+    Always emits all four labels (even if some are empty) to make the structure stable.
+    """
+    # Keep English normalization light so we don't destroy Arabic.
+    # normalize_text likely does whitespace cleanup etc; safe for bilingual if it doesn't drop Arabic.
+    title_en = safe_str(title_en).strip()
+    desc_en  = safe_str(desc_en).strip()
+    title_ar = safe_str(title_ar).strip()
+    desc_ar  = safe_str(desc_ar).strip()
+
+    # Do NOT force title==desc collapse here; keep both as sources for canonicalization.
+    text = (
+        f"TITLE_EN: {title_en}\n"
+        f"DESC_EN: {desc_en}\n\n"
+        f"TITLE_AR: {title_ar}\n"
+        f"DESC_AR: {desc_ar}"
+    )
+
+    text = normalize_text(text)  # should mainly normalize whitespace/newlines
+    if text is None:
+        text = ""
+    return str(text).strip()
