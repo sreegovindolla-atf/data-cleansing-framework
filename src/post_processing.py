@@ -626,6 +626,6 @@ print(f"Saved to SQL Server: {TARGET_SCHEMA}.{TARGET_TABLE}")
 print("Rows written:", len(df))
 print("Non-null counts:\n", df.notna().sum())
 
-# with engine.begin() as conn:
-#     for q in QUERIES:
-#         conn.execute(sql_text(q))
+with engine.begin() as conn:
+    for q in QUERIES:
+        conn.execute(sql_text(q))
