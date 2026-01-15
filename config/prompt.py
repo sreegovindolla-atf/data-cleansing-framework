@@ -168,15 +168,27 @@ CRITICAL RULES:
       shelters
 
   - In these cases:
-    - asset = the most specific description (e.g., Small Mosque, Grand Mosque, Primary School Building, etc.)
-    - asset_category = the generic categorical type (e.g., Mosque, School, Hospital, etc.)
+    - asset = the most specific description (e.g., Small Mosque Construction, Grand Mosque, Primary School Building Maintenance, Existing Relay Station, etc.)
+    - asset_category = the generic categorical type (e.g., Mosque, School, Hospital, Stations, etc.)
     - asset_quantity = the number of assets being built or constructed(e.g., 1, 2, etc.)
 
    - Examples:
-    Small Mosque → Mosque
+    Small Mosque Construction → Mosque
     Grand Mosque → Mosque
-    Girls' Primary School → School
+    Girls' Primary School Maintenance → School
     Residential House → House
+
+    - If a project includes BOTH:
+    (a) construction of new assets AND
+    (b) maintenance, expansion, rehabilitation, or upgrading of existing assets,
+    THEN you MUST create separate asset records.
+
+  - The asset name MUST be explicitly differentiated as follows:
+    • Use "<Asset Name> - Construction" for new builds
+    • Use "<Asset Name> - Maintenance" for expansion, rehabilitation, upgrading, or equipment addition
+
+  - NEVER use the same asset name for both construction and maintenance activities.
+  - This rule is MANDATORY even if the base asset type is the same.
 
 Asset category rules:
   - asset_category MUST be singular, generic, standardized
