@@ -6,11 +6,7 @@ logging.getLogger("absl").setLevel(logging.ERROR)
 
 import sys
 import os
-import json
 import argparse
-import hashlib
-import pickle
-import re
 from pathlib import Path
 from sqlalchemy import create_engine
 import urllib
@@ -26,14 +22,15 @@ from config.examples.service_projects import EXAMPLES as SERV_EXAMPLES
 from config.prompt import PROMPT
 
 from utils.extraction_helpers import (
-    normalize_text,
     text_hash,
     load_cache,
     save_cache,
     annotated_to_dict,
-    save_results_with_master_project_amount,
+    jsonl_upsert_by_index,
+    load_processed_indexes_from_jsonl,
+    jsonl_to_json_snapshot, 
     safe_str,
-    build_labeled_bilingual_input
+    build_labeled_bilingual_input,
 )
 
 # -----------------------
@@ -49,6 +46,9 @@ RUN_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 OUT_JSONL = RUN_OUTPUT_DIR / f"{RUN_ID}_combined_extraction_results.jsonl"
 OUT_JSON  = RUN_OUTPUT_DIR / f"{RUN_ID}_combined_extraction_results.json"
+
+processed_indexes = load_processed_indexes_from_jsonl(OUT_JSONL)
+print(f"[INFO] Already in JSONL: {len(processed_indexes)} indexes")
 
 # Cache file (stores mapping: text_hash -> AnnotatedDocument)
 CACHE_PKL = RUN_OUTPUT_DIR / f"{RUN_ID}_lx_cache.pkl"
@@ -80,7 +80,6 @@ WHERE NOT EXISTS (
     WHERE a.[index] = b.[index]
 );
 """
-
 df_input = pd.read_sql(SOURCE_QUERY, engine)
 
 EXAMPLES = INFRA_EXAMPLES + DIST_EXAMPLES + SERV_EXAMPLES
@@ -90,12 +89,17 @@ EXAMPLES = INFRA_EXAMPLES + DIST_EXAMPLES + SERV_EXAMPLES
 # -----------------------
 CHECKPOINT_EVERY = 50
 
-all_results_with_amount = []
-
 cache = load_cache(CACHE_PKL)
 print(f"[INFO] Loaded cache entries: {len(cache)} from {CACHE_PKL.name}")
 
+processed_this_run = 0
+
 for i, row in enumerate(df_input.itertuples(index=False), start=1):
+    index = getattr(row, "Index", None)
+
+    # if index in processed_indexes:
+    #     continue
+
     title_en = safe_str(getattr(row, "ProjectTitleEnglish", "") or "")
     description_en = safe_str(getattr(row, "DescriptionEnglish", "") or "")
     title_ar = safe_str(getattr(row, "ProjectTitleArabic", "") or "")
@@ -112,14 +116,11 @@ for i, row in enumerate(df_input.itertuples(index=False), start=1):
     if not text_bilingual:
         continue
 
-    index = getattr(row, "Index", None)
-
     master_project_amount_actual = getattr(row, "Amount", None)
     master_project_oda_amount = getattr(row, "ODA_Amount", None)
     master_project_ge_amount = getattr(row, "GE_Amount", None)
     master_project_off_amount = getattr(row, "OFF_Amount", None)
 
-    # IMPORTANT: hash the bilingual text (not EN-only) so cache is correct
     h = text_hash(text_bilingual)
 
     if h in cache:
@@ -134,21 +135,41 @@ for i, row in enumerate(df_input.itertuples(index=False), start=1):
             fence_output=True,
             use_schema_constraints=False,
         )
+        cache[h] = result  # only update cache on fresh extraction
 
-    cache[h] = result
-    all_results_with_amount.append(
-        (result, index, master_project_amount_actual, master_project_oda_amount, master_project_ge_amount, master_project_off_amount)
-    )
+    # Convert result -> dict
+    d = annotated_to_dict(result)
+
+    # Build the output record in the SAME structure your post-processing expects
+    out = {}
+    out["extractions"] = d.get("extractions", [])
+    out["text"] = text_bilingual 
+    out["index"] = index
+    out["master_project_amount_actual"] = master_project_amount_actual
+    out["master_project_oda_amount"] = master_project_oda_amount
+    out["master_project_ge_amount"] = master_project_ge_amount
+    out["master_project_off_amount"] = master_project_off_amount
+
+    # Keep document_id if available
+    if d.get("document_id"):
+        out["document_id"] = d.get("document_id")
+
+    # UPSERT JSONL by index (rewrite only if same index is reprocessed)
+    jsonl_upsert_by_index(OUT_JSONL, out, index_key="index")
+    processed_indexes.add(index)
+    processed_this_run += 1
 
     if i % CHECKPOINT_EVERY == 0:
-        save_results_with_master_project_amount(all_results_with_amount, OUT_JSONL, OUT_JSON)
+        # Snapshot JSON rebuilt from JSONL (valid JSON)
+        jsonl_to_json_snapshot(OUT_JSONL, OUT_JSON)
+        # Save cache safely
         save_cache(cache, CACHE_PKL)
-        print(f"[checkpoint] saved {i} rows | cache={len(cache)}")
+        print(f"[checkpoint] processed={i} | upserted_this_run={processed_this_run} | cache={len(cache)}")
 
 # final save
-save_results_with_master_project_amount(all_results_with_amount, OUT_JSONL, OUT_JSON)
+jsonl_to_json_snapshot(OUT_JSONL, OUT_JSON)
 save_cache(cache, CACHE_PKL)
 
-print(f"Saved extraction: {OUT_JSONL}")
-print(f"Saved debug JSON: {OUT_JSON}")
-print(f"Saved cache:      {CACHE_PKL}  (entries={len(cache)})")
+print(f"Saved extraction JSONL: {OUT_JSONL}")
+print(f"Saved debug JSON:      {OUT_JSON}")
+print(f"Saved cache:           {CACHE_PKL}  (entries={len(cache)})")
