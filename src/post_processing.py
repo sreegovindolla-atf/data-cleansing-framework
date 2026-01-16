@@ -615,7 +615,7 @@ df.to_sql(
     TARGET_TABLE,
     engine,
     schema=TARGET_SCHEMA,
-    if_exists="replace",
+    if_exists="append",
     index=False,
     chunksize=500,
     dtype=dtype

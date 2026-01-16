@@ -42,7 +42,14 @@ QUERIES = [
            [Index],
            master_project_code,
            project_code,
-           CONCAT(project_code, '-', asset)         AS project_asset_code,
+           CONCAT(project_code, '-', 
+            CASE 
+                WHEN asset is not null THEN asset
+                WHEN item is not null THEN item
+                ELSE 'Unknown'
+            END
+           )         
+           AS project_asset_code,
            project_title_en,
            project_title_ar,
            project_description_en,

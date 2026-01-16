@@ -72,8 +72,13 @@ engine = get_sql_server_engine()
 # SOURCE QUERY
 # =====================================
 SOURCE_QUERY = """
-select *
-from dbo.MasterTableDenormalizedCleanedFinal
+SELECT *
+FROM dbo.MasterTableDenormalizedCleanedFinal a
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM silver.MasterTable_extracted b
+    WHERE a.[index] = b.[index]
+);
 """
 
 df_input = pd.read_sql(SOURCE_QUERY, engine)
