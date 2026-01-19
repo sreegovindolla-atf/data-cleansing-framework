@@ -31,6 +31,7 @@ from utils.extraction_helpers import (
     jsonl_to_json_snapshot, 
     safe_str,
     build_labeled_bilingual_input,
+    _jsonl_append
 )
 
 # -----------------------
@@ -155,7 +156,9 @@ for i, row in enumerate(df_input.itertuples(index=False), start=1):
         out["document_id"] = d.get("document_id")
 
     # UPSERT JSONL by index (rewrite only if same index is reprocessed)
-    jsonl_upsert_by_index(OUT_JSONL, out, index_key="index")
+    #jsonl_upsert_by_index(OUT_JSONL, out, index_key="index")
+    # Append for historical run
+    _jsonl_append(OUT_JSONL, out)
     processed_indexes.add(index)
     processed_this_run += 1
 

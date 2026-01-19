@@ -124,3 +124,6 @@ def parse_langextract_grouped_pairs(doc: dict):
 
     out.sort(key=lambda x: x.get("extraction_index", 10**9))
     return out
+
+def _is_blank(v) -> bool:
+    return v is None or v is pd.NA or (isinstance(v, float) and pd.isna(v)) or (isinstance(v, str) and v.strip() == "")

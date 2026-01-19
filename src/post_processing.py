@@ -20,7 +20,8 @@ from utils.post_processing_helpers import (
     is_missing_or_bad,
     fmt_mp,
     fmt_prj,
-    parse_langextract_grouped_pairs
+    parse_langextract_grouped_pairs,
+    _is_blank
 )
 
 from utils.post_processing_sql_queries import QUERIES
@@ -294,7 +295,7 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                 if current_project_code is None:
                     continue
                 ar_title = str(val).strip()
-                if project_title_ar_map.get(current_project_code) in (None, "", pd.NA):
+                if _is_blank(project_title_ar_map.get(current_project_code)):
                     project_title_ar_map[current_project_code] = ar_title
                 current_project_title_ar = project_title_ar_map[current_project_code]
                 if current_asset is not None and current_asset.get("project_code") == current_project_code:
@@ -307,7 +308,7 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                 if current_project_code is None:
                     continue
                 desc = re.sub(r"\s+", " ", str(val).strip())
-                if project_description_en_map.get(current_project_code) in (None, "", pd.NA):
+                if _is_blank(project_description_en_map.get(current_project_code)):
                     project_description_en_map[current_project_code] = desc
                 current_project_description_en = project_description_en_map[current_project_code]
                 if current_asset is not None and current_asset.get("project_code") == current_project_code:
@@ -320,7 +321,7 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                 if current_project_code is None:
                     continue
                 desc_ar = re.sub(r"\s+", " ", str(val).strip())
-                if project_description_ar_map.get(current_project_code) in (None, "", pd.NA):
+                if _is_blank(project_description_ar_map.get(current_project_code)):
                     project_description_ar_map[current_project_code] = desc_ar
                 current_project_description_ar = project_description_ar_map[current_project_code]
                 if current_asset is not None and current_asset.get("project_code") == current_project_code:
