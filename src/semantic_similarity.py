@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 # -----------------------------
 # Config
 # -----------------------------
-TOP_K = 10
+TOP_K = 20
 SIMILARITY_THRESHOLD = 0.80
 
 EMB_TABLE = "silver.project_embeddings"
@@ -97,6 +97,8 @@ for _, g in df.groupby(FILTER_COLS, dropna=False, sort=False):
                 "project_code": src["project_code"],
                 "project_title_en": src["project_title_en"],
                 "project_description_en": src["project_description_en"],
+                "project_title_ar": src["project_title_ar"],
+                "project_description_ar": src["project_description_ar"],
                 "country_name_en": src["country_name_en"],
                 "donor_name_en": src["donor_name_en"],
                 "implementing_org_en": src["implementing_org_en"],
@@ -104,6 +106,8 @@ for _, g in df.groupby(FILTER_COLS, dropna=False, sort=False):
                 "similar_project_code": sim["project_code"],
                 "similar_project_title_en": sim["project_title_en"],
                 "similar_project_description_en": sim["project_description_en"],
+                "similar_project_title_ar": sim["project_title_ar"],
+                "similar_project_description_ar": sim["project_description_ar"],
                 "similar_project_country_name_en": sim["country_name_en"],
                 "similar_project_donor_name_en": sim["donor_name_en"],
                 "similar_project_implementing_org_en": sim["implementing_org_en"],
@@ -139,6 +143,8 @@ df_out.to_sql(
         "project_code": NVARCHAR(255),
         "project_title_en": UnicodeText(),
         "project_description_en": UnicodeText(),
+        "project_title_ar": UnicodeText(),
+        "project_description_ar": UnicodeText(),
         "country_name_en": NVARCHAR(255),
         "donor_name_en": NVARCHAR(255),
         "implementing_org_en": NVARCHAR(255),
@@ -146,6 +152,8 @@ df_out.to_sql(
         "similar_project_code": NVARCHAR(255),
         "similar_project_title_en": UnicodeText(),
         "similar_project_description_en": UnicodeText(),
+        "similar_project_title_ar": UnicodeText(),
+        "similar_project_description_ar": UnicodeText(),
         "similar_project_country_name_en": NVARCHAR(255),
         "similar_project_donor_name_en": NVARCHAR(255),
         "similar_project_implementing_org_en": NVARCHAR(255),

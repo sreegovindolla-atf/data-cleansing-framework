@@ -19,7 +19,7 @@ TARGET_SCHEMA = "silver"
 TARGET_TABLE = "project_embeddings"
 
 # Text columns used to build embedding
-TEXT_COLS = ["project_title_en", "project_description_en"]
+TEXT_COLS = ["project_title_en", "project_description_en", "project_title_ar", "project_description_ar"]
 TABLE = "silver.cleaned_project"
 
 # =====================================
@@ -59,7 +59,9 @@ SELECT DISTINCT
     [index],
     project_code,
     project_title_en,
-    project_description_en
+    project_description_en,
+    project_title_ar,
+    project_description_ar
 FROM {TABLE}
 WHERE [index] NOT LIKE '%ADFD-%'
 """
@@ -91,7 +93,7 @@ if len(base_embeddings) != len(df_src):
 # -----------------------------
 # Build output dataframe (NO iloc loop needed)
 # -----------------------------
-df_out = df_src[["index", "project_code", "project_title_en", "project_description_en"]].copy()
+df_out = df_src[["index", "project_code", "project_title_en", "project_description_en", "project_title_ar", "project_description_ar"]].copy()
 df_out["embedding"] = [json.dumps(e.tolist()) for e in base_embeddings]
 df_out["ts_inserted"] = datetime.now(timezone.utc)
 
@@ -122,6 +124,8 @@ df_out.to_sql(
         "project_code": NVARCHAR(255),
         "project_title_en": UnicodeText(),        # NVARCHAR(MAX)
         "project_description_en": UnicodeText(),  # NVARCHAR(MAX)
+        "project_title_ar": UnicodeText(),        # NVARCHAR(MAX)
+        "project_description_ar": UnicodeText(),  # NVARCHAR(MAX)
         "embedding": UnicodeText(),               # NVARCHAR(MAX) 
         "ts_inserted": DateTime(),       # or DateTime(timezone=True)
     }
