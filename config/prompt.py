@@ -1,4 +1,5 @@
 import textwrap
+from typing import List
 
 PROMPT = textwrap.dedent("""\
 Extract the following fields as labeled spans from the input text.
@@ -335,3 +336,22 @@ AMOUNT RULES (IMPORTANT):
 - project_description_en is MANDATORY for each project_title_en.
 
 """)
+
+
+from typing import List
+
+def build_project_attr_prompt(allowed_values: List[str]) -> str:
+    allowed_bullets = "\n".join([f"- {v}" for v in allowed_values])
+    return f"""
+      Extract the following fields from the input text:
+      - subsector_en
+
+      Subsector Rules:
+      - mandatory field
+      - subsector MUST be exactly one of the allowed values below (match text exactly).
+      - Do NOT invent categories.
+      - Do NOT return multiple values.
+
+      Allowed subsector values:
+      {allowed_bullets}
+      """.strip()

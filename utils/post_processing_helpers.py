@@ -127,3 +127,39 @@ def parse_langextract_grouped_pairs(doc: dict):
 
 def _is_blank(v) -> bool:
     return v is None or v is pd.NA or (isinstance(v, float) and pd.isna(v)) or (isinstance(v, str) and v.strip() == "")
+
+def json_to_csv(jsonl_path: str | Path, csv_path: str | Path):
+    """
+    Convert LangExtract JSONL to CSV.
+    Extracts: index, project_code, subsector.
+    """
+
+    rows = []
+
+    with open(jsonl_path, "r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+
+            r = json.loads(line)
+
+            # extract subsector from LangExtract wrapper
+            subsector_en = None
+            for e in r.get("extractions", []):
+                if e.get("extraction_class") == "subsector_en":
+                    val = e.get("extraction_text")
+                    if isinstance(val, (str, int, float)):
+                        subsector_en = str(val).strip()
+                    break
+
+            rows.append({
+                "index": r.get("index"),
+                "project_code": r.get("project_code"),
+                "subsector_en": subsector_en,
+                "document_id": r.get("document_id")
+            })
+
+    df = pd.DataFrame(rows)
+    df.to_csv(csv_path, index=False, encoding="utf-8-sig")
+
+    return df

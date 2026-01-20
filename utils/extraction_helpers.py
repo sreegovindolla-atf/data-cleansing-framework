@@ -91,6 +91,21 @@ def jsonl_upsert_by_index(path: Path, record: dict, index_key: str = "index"):
     _jsonl_remove_index(path, idx, index_key=index_key)
     _jsonl_append(path, record)
 
+def jsonl_upsert_by_project_code(path: Path, record: dict, index_key: str = "project_code"):
+    """
+    Upsert a record into JSONL:
+      - if project_code doesn't exist -> append
+      - if project_code exists -> rewrite file excluding that project_code, then append record
+    """
+    idx = record.get(index_key)
+    if idx is None:
+        _jsonl_append(path, record)
+        return
+
+    # Remove existing occurrences (only does real rewrite if found)
+    _jsonl_remove_index(path, idx, index_key=index_key)
+    _jsonl_append(path, record)
+
 
 def jsonl_to_json_snapshot(jsonl_path: Path, json_path: Path):
     """
