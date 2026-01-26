@@ -73,14 +73,21 @@ engine = get_sql_server_engine()
 # SOURCE QUERY
 # =====================================
 SOURCE_QUERY = """
-SELECT TOP 100 *
+SELECT
+    a.*
+    , COALESCE(b.EmergencyTitle, b.emergencytitlear) AS emergency_title
+FROM
+(
+SELECT *
 FROM [silver].[cleaned_project] cp
 WHERE cp.master_project_code IN (
     SELECT master_project_code
     FROM [silver].[cleaned_project]
     GROUP BY master_project_code
     HAVING COUNT(*) > 1
-)
+))a
+LEFT JOIN [dbo].[MasterTableDenormalizedCleanedFinal] b
+    ON a.[index] = b.[index]
 """
 df_input = pd.read_sql(SOURCE_QUERY, engine)
 
@@ -106,6 +113,7 @@ processed_this_run = 0
 for i, row in enumerate(df_input.itertuples(index=False), start=1):
     index = safe_str(getattr(row, "index", None) or "")
     project_code = safe_str(getattr(row, "project_code", None) or "")
+    emergency_title = safe_str(getattr(row, "emergency_title", None) or "")
 
     # if index in processed_indexes:
     #     continue
@@ -118,12 +126,15 @@ for i, row in enumerate(df_input.itertuples(index=False), start=1):
     if not (title_en.strip() or description_en.strip() or title_ar.strip() or description_ar.strip()):
         continue
 
-    text_bilingual = build_labeled_bilingual_input(
-        title_en=title_en,
-        desc_en=description_en,
-        title_ar=title_ar,
-        desc_ar=description_ar,
-    )
+    text_bilingual = f"""
+                        EMERGENCY_TITLE: {emergency_title}
+                        {build_labeled_bilingual_input(
+                            title_en=title_en,
+                            desc_en=description_en,
+                            title_ar=title_ar,
+                            desc_ar=description_ar,
+                        )}
+                        """.strip()
 
     # Skip only if BOTH languages are empty
     if not text_bilingual:
@@ -154,6 +165,7 @@ for i, row in enumerate(df_input.itertuples(index=False), start=1):
     out["text"] = text_bilingual 
     out["index"] = index
     out["project_code"] = project_code
+    out["emergency_title"] = emergency_title
 
     # Keep document_id if available
     if d.get("document_id"):
