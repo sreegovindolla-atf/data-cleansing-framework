@@ -42,22 +42,71 @@ engine = get_sql_server_engine()
 # -----------------------------
 # Load embeddings + join filter cols (DEDUPED)
 # -----------------------------
-sql = f"""
-SELECT 
-    a.*
+VIEW_SCHEMA = "silver"
+VIEW_NAME = "vw_project_similarity_source"
+
+CREATE_VIEW_SQL = f"""
+CREATE OR ALTER VIEW {VIEW_SCHEMA}.{VIEW_NAME}
+AS
+-- non-ADFD newly split projects
+SELECT
+    a.[index]
+  , a.project_code
+  , a.project_title_en
+  , a.project_description_en
+  , a.project_title_ar
+  , a.project_description_ar
+  , b.year
+  , b.CountryNameEnglish                  AS country_name_en
+  , b.DonorNameEnglish                    AS donor_name_en
+  , b.ImplementingOrganizationEnglish     AS implementing_org_en
+  , c.extracted_subsector_en              AS subsector_name_en
+  , a.embedding
+FROM silver.project_embeddings a
+LEFT JOIN [dbo].[MasterTableDenormalizedCleanedFinal] b
+  ON a.[index] = b.[index]
+LEFT JOIN silver.cleaned_project_attributes c
+    ON a.project_code = c.project_code
+WHERE EXISTS (
+    SELECT 1
+    FROM silver.cleaned_project_attributes c
+    WHERE c.project_code = a.project_code
+)
+UNION ALL
+-- non-ADFD single projects
+SELECT
+    a.[index]
+  , a.project_code
+  , a.project_title_en
+  , a.project_description_en
+  , a.project_title_ar
+  , a.project_description_ar
   , b.year
   , b.CountryNameEnglish                  AS country_name_en
   , b.DonorNameEnglish                    AS donor_name_en
   , b.ImplementingOrganizationEnglish     AS implementing_org_en
   , b.SubSectorNameEnglish                AS subsector_name_en
-FROM {EMB_TABLE} a
-LEFT JOIN {DENORM_TABLE} b
+  , a.embedding
+FROM silver.project_embeddings a
+LEFT JOIN [dbo].[MasterTableDenormalizedCleanedFinal] b
   ON a.[index] = b.[index]
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM silver.cleaned_project_attributes c
+    WHERE c.project_code = a.project_code
+);
 """
 
-print("[LOAD] Loading embeddings + metadata from SQL...")
+print(f"[VIEW] Creating/updating view {VIEW_SCHEMA}.{VIEW_NAME} ...")
+with engine.begin() as conn:
+    conn.execute(sql_text(CREATE_VIEW_SQL))
+print("[VIEW] View ready")
+
+
+sql = f"SELECT * FROM {VIEW_SCHEMA}.{VIEW_NAME};"
+print("[LOAD] Loading embeddings + metadata from VIEW...")
 df = pd.read_sql_query(text(sql), engine).fillna("").reset_index(drop=True)
-print(f"[LOAD] Loaded {len(df):,} rows from database")
+print(f"[LOAD] Loaded {len(df):,} rows from view")
 
 # Parse embeddings (stored as NVARCHAR list)
 print("[EMB] Parsing embeddings...")
