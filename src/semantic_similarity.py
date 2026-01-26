@@ -3,7 +3,7 @@ import pandas as pd
 import faiss
 from pathlib import Path
 from sqlalchemy import create_engine, text
-from sqlalchemy.types import NVARCHAR, UnicodeText, DateTime, Float
+from sqlalchemy.types import NVARCHAR, UnicodeText, DateTime, Float, Boolean
 import urllib
 import ast
 from datetime import datetime, timezone
@@ -51,6 +51,7 @@ AS
 -- non-ADFD newly split projects
 SELECT
     a.[index]
+  , b.SourceID                            AS source_id
   , a.project_code
   , a.project_title_en
   , a.project_description_en
@@ -76,6 +77,7 @@ UNION ALL
 -- non-ADFD single projects
 SELECT
     a.[index]
+  , b.SourceID                            AS source_id
   , a.project_code
   , a.project_title_en
   , a.project_description_en
@@ -154,6 +156,7 @@ def run_grouped_faiss(df_slice: pd.DataFrame, group_cols: list[str]):
 
                 rows.append({
                     "index": src["index"],
+                    "source_id": src["source_id"],
                     "project_code": src["project_code"],
                     "project_title_en": src["project_title_en"],
                     "project_description_en": src["project_description_en"],
@@ -166,6 +169,7 @@ def run_grouped_faiss(df_slice: pd.DataFrame, group_cols: list[str]):
                     "subsector_name_en": src["subsector_name_en"],
 
                     "similar_index": sim["index"],
+                    "similar_source_id": sim["source_id"],
                     "similar_project_code": sim["project_code"],
                     "similar_project_title_en": sim["project_title_en"],
                     "similar_project_description_en": sim["project_description_en"],
@@ -209,6 +213,13 @@ print(f"[RUN] Total rows after seasonal: {len(out_rows):,}")
 
 df_out = pd.DataFrame(out_rows)
 
+df_out["source_id_match"] = (
+    df_out["source_id"].astype(str).str.strip().ne("") &
+    df_out["similar_source_id"].astype(str).str.strip().ne("") &
+    (df_out["source_id"].astype(str).str.strip() == df_out["similar_source_id"].astype(str).str.strip())
+)
+print(f"[OUT] source_id_match=True count: {df_out['source_id_match'].sum():,} / {len(df_out):,}")
+
 
 # -----------------------------
 # Save output to CSV (optional)
@@ -235,6 +246,7 @@ df_out.to_sql(
     method=None,
     dtype={
         "index": NVARCHAR(255),
+        "source_id": NVARCHAR(255),
         "project_code": NVARCHAR(255),
         "project_title_en": UnicodeText(),
         "project_description_en": UnicodeText(),
@@ -247,6 +259,7 @@ df_out.to_sql(
         "subsector_name_en": NVARCHAR(255),
 
         "similar_index": NVARCHAR(255),
+        "similar_source_id": NVARCHAR(255),
         "similar_project_code": NVARCHAR(255),
         "similar_project_title_en": UnicodeText(),
         "similar_project_description_en": UnicodeText(),
@@ -259,6 +272,8 @@ df_out.to_sql(
         "similar_project_subsector_name_en": NVARCHAR(255),
 
         "similarity_score": Float(),
+        "source_id_match": Boolean(),
+
         "ts_inserted": DateTime(),
     },
 )
@@ -277,7 +292,7 @@ INSERT_ADFD_SQL = f"""
         cp.project_description_en,
         cp.project_title_ar,
         cp.project_description_ar,
-        mt.SourceID
+        mt.SourceID             AS source_id
     FROM silver.cleaned_project cp
     JOIN dbo.MasterTableDenormalizedCleanedFinal mt
         ON cp.[index] = mt.[index]
@@ -286,22 +301,26 @@ INSERT_ADFD_SQL = f"""
 )
 INSERT INTO {OUT_SCHEMA}.{OUT_TABLE} (
       [index]
+    , source_id
     , project_code
     , project_title_en
     , project_description_en
     , project_title_ar
     , project_description_ar
     , similar_index
+    , similar_source_id
     , similar_project_code
     , similar_project_title_en
     , similar_project_description_en
     , similar_project_title_ar
     , similar_project_description_ar
     , similarity_score
+    , source_id_match
     , ts_inserted
 )
 SELECT
     a.[index],
+    a.source_id,
     a.project_code,
     a.project_title_en,
     a.project_description_en,
@@ -309,6 +328,7 @@ SELECT
     a.project_description_ar,
 
     b.[index]                AS similar_index,
+    b.source_id               AS similar_source_id,
     b.project_code           AS similar_project_code,
     b.project_title_en       AS similar_project_title_en,
     b.project_description_en AS similar_project_description_en,
@@ -316,15 +336,18 @@ SELECT
     b.project_description_ar AS similar_project_description_ar,
 
     CAST(1.0 AS FLOAT)       AS similarity_score,
+    CASE
+        WHEN a.source_id = b.source_id THEN 1
+        ELSE 0
+        END AS source_id_match,
     CURRENT_TIMESTAMP        AS ts_inserted
 FROM adfd a
 JOIN adfd b
-  ON a.SourceID = b.SourceID
+  ON a.source_id = b.source_id
  AND a.[index] <> b.[index];
 """
 
 print("[ADFD] Appending ADFD similarity rules...")
 with engine.begin() as conn:
     rows = conn.execute(sql_text(INSERT_ADFD_SQL)).rowcount
-
 print(f"[INFO] Appended ADFD similar projects: {rows} rows")
