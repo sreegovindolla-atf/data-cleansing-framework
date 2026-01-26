@@ -82,7 +82,7 @@ def main():
     # Read input data
     # -----------------------------
     query = f"""
-    SELECT DISTINCT TOP 1000
+    SELECT DISTINCT TOP 4000
         [{ID_COL}]            ,
         [{EN_TITLE_COL}]      AS project_title_en,
         [{EN_DESC_COL}]       AS project_description_en,
