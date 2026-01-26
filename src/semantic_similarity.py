@@ -22,6 +22,7 @@ OUT_SCHEMA = "silver"
 OUT_TABLE  = "similar_projects"
 
 FILTER_COLS = ["country_name_en", "donor_name_en", "implementing_org_en"]
+SEASONAL_SUBSECTOR = "Seasonal programmes"
 
 # =====================================
 # SQL SERVER CONNECTION (WINDOWS AUTH)
@@ -44,79 +45,121 @@ engine = get_sql_server_engine()
 sql = f"""
 SELECT 
     a.*
-    , b.CountryNameEnglish                  AS country_name_en
-    , b.DonorNameEnglish                    AS donor_name_en
-    , b.ImplementingOrganizationEnglish     AS implementing_org_en
-  FROM {EMB_TABLE} a
-  LEFT JOIN {DENORM_TABLE} b
-	ON a.[index] = b.[index]
+  , b.year
+  , b.CountryNameEnglish                  AS country_name_en
+  , b.DonorNameEnglish                    AS donor_name_en
+  , b.ImplementingOrganizationEnglish     AS implementing_org_en
+  , b.SubSectorNameEnglish                AS subsector_name_en
+FROM {EMB_TABLE} a
+LEFT JOIN {DENORM_TABLE} b
+  ON a.[index] = b.[index]
 """
 
+print("[LOAD] Loading embeddings + metadata from SQL...")
 df = pd.read_sql_query(text(sql), engine).fillna("").reset_index(drop=True)
+print(f"[LOAD] Loaded {len(df):,} rows from database")
 
 # Parse embeddings (stored as NVARCHAR list)
+print("[EMB] Parsing embeddings...")
 embeddings = np.asarray([ast.literal_eval(s) for s in df["embedding"]], dtype=np.float32)
+print(f"[EMB] Parsed embeddings with shape {embeddings.shape}")
 
 # -----------------------------
-# Similarity search WITH HARD FILTER (grouped FAISS)
+# Similarity search WITH HARD FILTER (FAISS)
 # -----------------------------
 ts_inserted = datetime.now(timezone.utc)
 out_rows = []
 
-# Only compare within same Country+Donor+ImplementingOrg
-for _, g in df.groupby(FILTER_COLS, dropna=False, sort=False):
-    if len(g) < 2:
-        continue
+def run_grouped_faiss(df_slice: pd.DataFrame, group_cols: list[str]):
+    print(f"[FAISS] Starting FAISS for {len(df_slice):,} rows")
+    rows = []
 
-    idxs = g.index.to_numpy()
-    vecs = embeddings[idxs]
+    for _, g in df_slice.groupby(group_cols, dropna=False, sort=False):
+        if len(g) < 2:
+            continue
 
-    dim = vecs.shape[1]
-    faiss_index = faiss.IndexFlatIP(dim)  # cosine similarity if vectors normalized
-    faiss_index.add(vecs)
+        idxs = g.index.to_numpy()
+        vecs = embeddings[idxs]
 
-    scores, nbrs = faiss_index.search(vecs, TOP_K + 1)
+        dim = vecs.shape[1]
+        faiss_index = faiss.IndexFlatIP(dim)
+        faiss_index.add(vecs)
 
-    for gi in range(len(g)):
-        src_global_i = int(idxs[gi])
-        src = df.iloc[src_global_i]
+        scores, nbrs = faiss_index.search(vecs, TOP_K + 1)
 
-        for rank in range(TOP_K + 1):
-            gj = int(nbrs[gi, rank])
-            s = float(scores[gi, rank])
+        for gi in range(len(g)):
+            src_global_i = int(idxs[gi])
+            src = df.iloc[src_global_i]
 
-            if gj < 0 or gj == gi:
-                continue
-            if s < SIMILARITY_THRESHOLD:
-                continue
+            for rank in range(TOP_K + 1):
+                gj = int(nbrs[gi, rank])
+                s = float(scores[gi, rank])
 
-            sim_global_j = int(idxs[gj])
-            sim = df.iloc[sim_global_j]
+                if gj < 0 or gj == gi:
+                    continue
+                if s < SIMILARITY_THRESHOLD:
+                    continue
 
-            out_rows.append({
-                "index": src["index"],
-                "project_code": src["project_code"],
-                "project_title_en": src["project_title_en"],
-                "project_description_en": src["project_description_en"],
-                "project_title_ar": src["project_title_ar"],
-                "project_description_ar": src["project_description_ar"],
-                "country_name_en": src["country_name_en"],
-                "donor_name_en": src["donor_name_en"],
-                "implementing_org_en": src["implementing_org_en"],
-                "similar_index": sim["index"],
-                "similar_project_code": sim["project_code"],
-                "similar_project_title_en": sim["project_title_en"],
-                "similar_project_description_en": sim["project_description_en"],
-                "similar_project_title_ar": sim["project_title_ar"],
-                "similar_project_description_ar": sim["project_description_ar"],
-                "similar_project_country_name_en": sim["country_name_en"],
-                "similar_project_donor_name_en": sim["donor_name_en"],
-                "similar_project_implementing_org_en": sim["implementing_org_en"],
-                "similarity_score": round(s, 4),
-                "ts_inserted": ts_inserted,
-            })
+                sim_global_j = int(idxs[gj])
+                sim = df.iloc[sim_global_j]
+
+                rows.append({
+                    "index": src["index"],
+                    "project_code": src["project_code"],
+                    "project_title_en": src["project_title_en"],
+                    "project_description_en": src["project_description_en"],
+                    "project_title_ar": src["project_title_ar"],
+                    "project_description_ar": src["project_description_ar"],
+                    "country_name_en": src["country_name_en"],
+                    "donor_name_en": src["donor_name_en"],
+                    "implementing_org_en": src["implementing_org_en"],
+                    "year": src["year"],
+                    "subsector_name_en": src["subsector_name_en"],
+
+                    "similar_index": sim["index"],
+                    "similar_project_code": sim["project_code"],
+                    "similar_project_title_en": sim["project_title_en"],
+                    "similar_project_description_en": sim["project_description_en"],
+                    "similar_project_title_ar": sim["project_title_ar"],
+                    "similar_project_description_ar": sim["project_description_ar"],
+                    "similar_project_country_name_en": sim["country_name_en"],
+                    "similar_project_donor_name_en": sim["donor_name_en"],
+                    "similar_project_implementing_org_en": sim["implementing_org_en"],
+                    "similar_project_year": sim["year"],
+                    "similar_project_subsector_name_en": sim["subsector_name_en"],
+
+                    "similarity_score": round(s, 4),
+                    "ts_inserted": ts_inserted,
+                })
+
+    print(f"[FAISS] Finished FAISS → produced {len(rows):,} similarity rows")
+
+    return rows
+
+# Split seasonal vs non-seasonal
+df_seasonal = df[df["subsector_name_en"] == SEASONAL_SUBSECTOR]
+df_non_seasonal = df[df["subsector_name_en"] != SEASONAL_SUBSECTOR]
+print(f"[SPLIT] Seasonal projects: {len(df_seasonal):,}")
+print(f"[SPLIT] Non-seasonal projects: {len(df_non_seasonal):,}")
+
+out_rows = []
+
+# Non-seasonal: same country+donor+implementing org (year can differ)
+print("[RUN] Running FAISS for NON-SEASONAL projects")
+out_rows.extend(
+    run_grouped_faiss(df_non_seasonal, FILTER_COLS)
+)
+print(f"[RUN] Total rows after non-seasonal: {len(out_rows):,}")
+
+# Seasonal: must match year too
+print("[RUN] Running FAISS for SEASONAL projects (year-aware)")
+out_rows.extend(
+    run_grouped_faiss(df_seasonal, FILTER_COLS + ["year"])
+)
+print(f"[RUN] Total rows after seasonal: {len(out_rows):,}")
 
 df_out = pd.DataFrame(out_rows)
+
 
 # -----------------------------
 # Save output to CSV (optional)
@@ -125,12 +168,14 @@ OUT_DIR = Path("data/outputs/embeddings")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 OUT_CSV = OUT_DIR / "similarity_projects_flat_filtered.csv"
+print("[CSV] Writing CSV output...")
 df_out.to_csv(OUT_CSV, index=False, encoding="utf-8-sig")
 print(f"Saved {OUT_CSV}")
 
 # -----------------------------
 # Write output to SQL Server
 # -----------------------------
+print("[SQL] Writing similarity results to SQL Server...")
 df_out.to_sql(
     name=OUT_TABLE,
     schema=OUT_SCHEMA,
@@ -149,6 +194,9 @@ df_out.to_sql(
         "country_name_en": NVARCHAR(255),
         "donor_name_en": NVARCHAR(255),
         "implementing_org_en": NVARCHAR(255),
+        "year": NVARCHAR(50),
+        "subsector_name_en": NVARCHAR(255),
+
         "similar_index": NVARCHAR(255),
         "similar_project_code": NVARCHAR(255),
         "similar_project_title_en": UnicodeText(),
@@ -158,6 +206,9 @@ df_out.to_sql(
         "similar_project_country_name_en": NVARCHAR(255),
         "similar_project_donor_name_en": NVARCHAR(255),
         "similar_project_implementing_org_en": NVARCHAR(255),
+        "similar_project_year": NVARCHAR(50),
+        "similar_project_subsector_name_en": NVARCHAR(255),
+
         "similarity_score": Float(),
         "ts_inserted": DateTime(),
     },
@@ -165,6 +216,9 @@ df_out.to_sql(
 
 print(f"Saved to SQL Server: {OUT_SCHEMA}.{OUT_TABLE}")
 
+# -----------------------------
+# ADFD projects
+# -----------------------------
 INSERT_ADFD_SQL = f"""
 ;WITH adfd AS (
     SELECT
@@ -218,9 +272,9 @@ FROM adfd a
 JOIN adfd b
   ON a.SourceID = b.SourceID
  AND a.[index] <> b.[index];
-
 """
 
+print("[ADFD] Appending ADFD similarity rules...")
 with engine.begin() as conn:
     rows = conn.execute(sql_text(INSERT_ADFD_SQL)).rowcount
 
