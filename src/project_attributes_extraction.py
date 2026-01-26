@@ -18,7 +18,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config.examples.project_attributes import ATTR_EXAMPLES
 from config.prompt import build_project_attr_prompt
-from utils.project_attributes_list import load_allowed_subsectors
+from utils.project_attributes_list import (
+    load_allowed_subsectors
+    , load_allowed_mdg_targets
+    , load_allowed_sdg_targets
+)
 
 from utils.extraction_helpers import (
     text_hash,
@@ -31,7 +35,8 @@ from utils.extraction_helpers import (
     safe_str,
     build_labeled_bilingual_input,
     _jsonl_append,
-    jsonl_upsert_by_project_code
+    jsonl_upsert_by_project_code,
+    normalize_text
 )
 
 # -----------------------
@@ -76,6 +81,7 @@ SOURCE_QUERY = """
 SELECT
     a.*
     , COALESCE(b.EmergencyTitle, b.emergencytitlear) AS emergency_title
+    , b.year
 FROM
 (
 SELECT *
@@ -97,8 +103,10 @@ EXAMPLES = ATTR_EXAMPLES
 # build prompt
 # -----------------------
 allowed_subsectors = load_allowed_subsectors(engine)
+allowed_mdg_targets = load_allowed_mdg_targets(engine)
+allowed_sdg_targets = load_allowed_sdg_targets(engine)
 
-ATTR_PROMPT = build_project_attr_prompt(allowed_subsectors)
+ATTR_PROMPT = build_project_attr_prompt(allowed_subsectors, allowed_mdg_targets, allowed_sdg_targets)
 
 # -----------------------
 # extraction loop
@@ -114,6 +122,8 @@ for i, row in enumerate(df_input.itertuples(index=False), start=1):
     index = safe_str(getattr(row, "index", None) or "")
     project_code = safe_str(getattr(row, "project_code", None) or "")
     emergency_title = safe_str(getattr(row, "emergency_title", None) or "")
+    year = safe_str(getattr(row, "year", None) or "")
+
 
     # if index in processed_indexes:
     #     continue
@@ -127,6 +137,7 @@ for i, row in enumerate(df_input.itertuples(index=False), start=1):
         continue
 
     text_bilingual = f"""
+                        YEAR: {year}
                         EMERGENCY_TITLE: {emergency_title}
                         {build_labeled_bilingual_input(
                             title_en=title_en,
@@ -146,7 +157,7 @@ for i, row in enumerate(df_input.itertuples(index=False), start=1):
         result = cache[h]
     else:
         result = lx.extract(
-            text_or_documents=text_bilingual,
+            text_or_documents=normalize_text(text_bilingual),
             prompt_description=ATTR_PROMPT,
             examples=EXAMPLES,
             model_id="gpt-4.1-mini",
@@ -166,6 +177,7 @@ for i, row in enumerate(df_input.itertuples(index=False), start=1):
     out["index"] = index
     out["project_code"] = project_code
     out["emergency_title"] = emergency_title
+    out["year"] = year
 
     # Keep document_id if available
     if d.get("document_id"):

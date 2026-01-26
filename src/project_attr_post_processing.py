@@ -102,11 +102,15 @@ SELECT
     , pa.subsector_en                   AS extracted_subsector_en
     , mt.SubSectorNameEnglish           AS subsector_en
     , sect.SectorNameEnglish            AS extracted_sector_en
-    , mtsect.SectorNameEnglish          AS sector_en
+    , mt.SectorNameEnglish              AS sector_en
     , cl.groupNameEnglish               AS extracted_cluster_en
     , mtcl.groupNameEnglish             AS cluster_en
     , acat.AssistanceCategoryEnglish    AS extracted_assistance_category_en
-    , mtacat.AssistanceCategoryEnglish  AS assistance_category_en
+    , mt.AssistanceCategoryEnglish      AS assistance_category_en
+    , pa.target_en                      AS extracted_target_en
+    , mt.Target_English                 AS target_en
+    , g.NameEnglish                     AS extracted_goal_en
+    , mt.NameEnglish                    AS goal_en
     , pa.document_id
     , CURRENT_TIMESTAMP                 AS ts_inserted
 FROM silver.stg_project_attributes pa
@@ -115,25 +119,30 @@ LEFT JOIN silver.cleaned_project p
 LEFT JOIN dbo.MasterTableDenormalizedCleanedFinal mt
     ON pa.[index] = mt.[index]
 
--- extracted sector, cluster, assistance category
+-- extracted fields
 LEFT JOIN dbo.SubSectors subsect
     ON LOWER(pa.subsector_en) = LOWER(subsect.SubSectorNameEnglish)
+-- extracted sector
 LEFT JOIN dbo.Sectors sect
     ON subsect.OCFA_Code = sect.OCFA_Code
+-- extracted cluster
 LEFT JOIN dbo.Clusters cl
     ON subsect.Culster_Code = cl.groupID
+-- extracted assistance category
 LEFT JOIN dbo.AssistanceCategory acat
     ON subsect.Cat_ID = acat.ID
+-- extracted goal
+LEFT JOIN dbo.Targets t
+    ON LOWER(pa.target_en) = LOWER(t.Target_English)
+LEFT JOIN dbo.DevelopmentGoals g
+    ON LOWER(t.Goal_ID) = LOWER(g.ID)
 
--- db sector, cluster, assistance category
+-- db fields
 LEFT JOIN dbo.SubSectors mtsubsect
     ON LOWER(mt.SubSectorNameEnglish) = LOWER(mtsubsect.SubSectorNameEnglish)
-LEFT JOIN dbo.Sectors mtsect
-    ON mtsubsect.OCFA_Code = mtsect.OCFA_Code
+-- db cluster
 LEFT JOIN dbo.Clusters mtcl
     ON mtsubsect.Culster_Code = mtcl.groupID
-LEFT JOIN dbo.AssistanceCategory mtacat
-    ON mtsubsect.Cat_ID = mtacat.ID
 """
 
 with engine.begin() as conn:

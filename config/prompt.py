@@ -340,18 +340,72 @@ AMOUNT RULES (IMPORTANT):
 
 from typing import List
 
-def build_project_attr_prompt(allowed_values: List[str]) -> str:
-    allowed_bullets = "\n".join([f"- {v}" for v in allowed_values])
+def build_project_attr_prompt(allowed_subsectors: List[str], allowed_mdg_targets: List[str], allowed_sdg_targets: List[str]) -> str:
+#def build_project_attr_prompt(allowed_subsectors: List[str]) -> str:
+    subsector_bullets = "\n".join([f"- {v}" for v in allowed_subsectors])
+    mdg_target_bullets = "\n".join([f"- {v}" for v in allowed_mdg_targets])
+    sdg_target_bullets = "\n".join([f"- {v}" for v in allowed_sdg_targets])
+
     return f"""
       Extract the following fields from the input text:
       - subsector_en
-
-      Subsector Rules:
+      - target_en
+      
+      SUBSECTOR RULES:
+      Subsector Definition: The subsector represents the PRIMARY development objective of the project,
+      not the delivery method, funding mechanism, or all activities mentioned.
       - mandatory field
-      - subsector MUST be exactly one of the allowed values below (match text exactly).
+      - subsector_en MUST be exactly one of the allowed values below (match text exactly).
       - Do NOT invent categories.
       - Do NOT return multiple values.
+      - Choose the subsector that best describes why the project exists and the objective of the project.
+      - Do NOT classify based on beneficiaries alone.
+      - Do NOT classify by inputs or delivery method
 
+        EMERGENCY RULE (STRICT):
+        - You will be given a field called emergency_title.
+        - First, decide whether emergency_title has a meaningful value.
+
+        A meaningful emergency_title:
+        - is NOT null, empty, "None", "null", "n/a"
+        - is NOT an Arabic value meaning "None" or "Not Applicable" or "Nothing"
+
+        If emergency_title HAS a meaningful value:
+        - subsector MUST be selected from values that start with "Emergency"
+        - NEVER select a non-Emergency subsector
+
+        If emergency_title DOES NOT have a meaningful value:
+        - subsector MUST NOT start with "Emergency"
+        - NEVER select an Emergency subsector
+      
       Allowed subsector values:
-      {allowed_bullets}
+      {subsector_bullets}
+
+      TARGET RULES:
+      Framework selection:
+      - If project_year <= 2015: select target_en ONLY from the MDG target list.
+      - If project_year > 2015: select target_en ONLY from the SDG target list.
+      - NEVER select from the wrong list.
+      
+      Closed-set enforcement:
+      - target_en MUST be copied EXACTLY from ONE of the allowed values below.
+      - Do NOT paraphrase, summarize, shorten, or rewrite target text.
+      - Do NOT invent new targets.
+      - Do NOT combine multiple targets.
+      - Return EXACTLY ONE target_en value.
+      - Do NOT return NULL. It is a mandatory field.
+      
+      Matching rule:
+      - Select the SINGLE allowed target that best matches the PRIMARY intended outcome.
+      
+      Classification constraints:
+      - Do NOT classify based on beneficiaries alone.
+      - Do NOT classify by activities, inputs, or delivery mechanisms.
+      - Targets represent intended OUTCOMES only.
+
+      Allowed MDG target values (use only if project_year <= 2015):
+      {mdg_target_bullets}
+
+      Allowed SDG target values (use only if project_year > 2015):
+      {sdg_target_bullets}
       """.strip()

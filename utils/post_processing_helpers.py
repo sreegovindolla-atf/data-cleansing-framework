@@ -143,19 +143,33 @@ def json_to_csv(jsonl_path: str | Path, csv_path: str | Path):
 
             r = json.loads(line)
 
-            # extract subsector from LangExtract wrapper
+            # extract subsector and target from LangExtract wrapper
             subsector_en = None
+            target_en = None
             for e in r.get("extractions", []):
-                if e.get("extraction_class") == "subsector_en":
-                    val = e.get("extraction_text")
-                    if isinstance(val, (str, int, float)):
-                        subsector_en = str(val).strip()
+                cls = e.get("extraction_class")
+                val = e.get("extraction_text")
+
+                if isinstance(val, (str, int, float)):
+                    val = str(val).strip()
+                else:
+                    continue
+
+                if cls == "subsector_en" and not subsector_en:
+                    subsector_en = val
+
+                elif cls == "target_en" and not target_en:
+                    target_en = val
+
+                # stop early if we found both
+                if subsector_en and target_en:
                     break
 
             rows.append({
                 "index": r.get("index"),
                 "project_code": r.get("project_code"),
                 "subsector_en": subsector_en,
+                "target_en": target_en,
                 "document_id": r.get("document_id")
             })
 
