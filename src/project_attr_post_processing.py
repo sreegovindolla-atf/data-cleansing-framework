@@ -97,6 +97,8 @@ SELECT
     , p.project_title_ar
     , p.project_description_en
     , p.project_description_ar
+    , mt.EmergencyTitle                 As emergency_title_en
+    , mt.EmergencyTitleAR               AS emergency_title_ar
     , pa.subsector_en                   AS extracted_subsector_en
     , mt.SubSectorNameEnglish           AS subsector_en
     , sect.SectorNameEnglish            AS extracted_sector_en
