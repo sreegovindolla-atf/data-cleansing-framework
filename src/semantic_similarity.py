@@ -12,7 +12,7 @@ from sqlalchemy import text as sql_text
 # -----------------------------
 # Config
 # -----------------------------
-TOP_K = 20
+TOP_K = 30
 SIMILARITY_THRESHOLD = 0.80
 
 #EMB_TABLE = "silver.project_embeddings"
@@ -119,6 +119,7 @@ SELECT
   , b.DonorNameEnglish                    AS donor_name_en
   , b.ImplementingOrganizationEnglish     AS implementing_org_en
   , b.SubSectorNameEnglish                AS subsector_name_en
+  , b.amount
   , a.embedding
 FROM silver.dar_project_embeddings a
 LEFT JOIN [dbo].[MasterTableDenormalizedCleanedFinal] b
@@ -194,6 +195,7 @@ def run_grouped_faiss(df_slice: pd.DataFrame, group_cols: list[str]):
                     "implementing_org_en": src["implementing_org_en"],
                     "year": src["year"],
                     "subsector_name_en": src["subsector_name_en"],
+                    "amount": src["amount"],
 
                     "similar_index": sim["index"],
                     "similar_source_id": sim["source_id"],
@@ -207,6 +209,7 @@ def run_grouped_faiss(df_slice: pd.DataFrame, group_cols: list[str]):
                     "similar_project_implementing_org_en": sim["implementing_org_en"],
                     "similar_project_year": sim["year"],
                     "similar_project_subsector_name_en": sim["subsector_name_en"],
+                    "similar_project_amount": sim["amount"],
 
                     "similarity_score": round(s, 4),
                     "ts_inserted": ts_inserted,
@@ -257,6 +260,20 @@ df_out = (
 
 print(f"[DEDUP] Rows after symmetric de-dup: {len(df_out):,}")
 
+# -----------------------------
+# % difference between amounts
+# -----------------------------
+df_out["amount_diff_pct"] = (
+    (df_out["amount"] - df_out["similar_project_amount"])
+        .abs()
+        .div(
+            df_out[["amount", "similar_project_amount"]]
+                .abs()
+                .max(axis=1)
+        )
+        .mul(100)
+        .round(2)
+)
 
 df_out["source_id_match"] = (
     df_out["source_id"].astype(str).str.strip().ne("") &
@@ -302,6 +319,7 @@ df_out.to_sql(
         "implementing_org_en": NVARCHAR(255),
         "year": NVARCHAR(50),
         "subsector_name_en": NVARCHAR(255),
+        "amount": Float(),
 
         "similar_index": NVARCHAR(255),
         "similar_source_id": NVARCHAR(255),
@@ -315,8 +333,10 @@ df_out.to_sql(
         "similar_project_implementing_org_en": NVARCHAR(255),
         "similar_project_year": NVARCHAR(50),
         "similar_project_subsector_name_en": NVARCHAR(255),
+        "similar_project_amount": Float(),
 
         "similarity_score": Float(),
+        "amount_diff_pct": Float(),
         "source_id_match": Boolean(),
 
         "ts_inserted": DateTime(),
