@@ -16,11 +16,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # -----------------------------
 MODEL_NAME = "all-MiniLM-L6-v2"
 TARGET_SCHEMA = "silver"
-TARGET_TABLE = "project_embeddings"
+#TARGET_TABLE = "project_embeddings"
+DAR_TARGET_TABLE = "dar_project_embeddings"
 
 # Text columns used to build embedding
 TEXT_COLS = ["project_title_en", "project_description_en", "project_title_ar", "project_description_ar"]
-TABLE = "silver.cleaned_project"
+TABLE = "dbo.MasterTableDenormalizedCleanedFinal"
 
 # =====================================
 # helpers
@@ -54,17 +55,32 @@ engine = get_sql_server_engine()
 # -----------------------------
 # Read from SQL Server
 # -----------------------------
+#sql = f"""
+#SELECT DISTINCT
+#    [index],
+#    project_code,
+#    project_title_en,
+#    project_description_en,
+#    project_title_ar,
+#    project_description_ar
+#FROM {TABLE}
+#WHERE [index] NOT LIKE '%ADFD-%'
+#"""
+
 sql = f"""
 SELECT DISTINCT
-    [index],
-    project_code,
-    project_title_en,
-    project_description_en,
-    project_title_ar,
-    project_description_ar
+    [index]
+    , ProjectTitleEnglish           AS project_title_en
+    , DescriptionEnglish            AS project_description_en
+    , ProjectTitleArabic            AS project_title_ar
+    , DescriptionArabic             AS project_description_ar
 FROM {TABLE}
-WHERE [index] NOT LIKE '%ADFD-%'
+WHERE 1=1
+--AND [index] NOT LIKE '%ADFD-%'
+--Dar Al Ber
+AND DonorID = 30
 """
+
 df_src = pd.read_sql_query(text(sql), engine).fillna("").reset_index(drop=True)
 
 # -----------------------------
@@ -93,7 +109,8 @@ if len(base_embeddings) != len(df_src):
 # -----------------------------
 # Build output dataframe (NO iloc loop needed)
 # -----------------------------
-df_out = df_src[["index", "project_code", "project_title_en", "project_description_en", "project_title_ar", "project_description_ar"]].copy()
+#df_out = df_src[["index", "project_code", "project_title_en", "project_description_en", "project_title_ar", "project_description_ar"]].copy()
+df_out = df_src[["index", "project_title_en", "project_description_en", "project_title_ar", "project_description_ar"]].copy()
 df_out["embedding"] = [json.dumps(e.tolist()) for e in base_embeddings]
 df_out["ts_inserted"] = datetime.now(timezone.utc)
 
@@ -103,7 +120,7 @@ df_out["ts_inserted"] = datetime.now(timezone.utc)
 RUN_OUTPUT_DIR = Path("data/outputs/embeddings")
 RUN_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-OUT_CSV = RUN_OUTPUT_DIR / "project_embeddings.csv"
+OUT_CSV = RUN_OUTPUT_DIR / "dar_project_embeddings.csv"
 df_out.to_csv(OUT_CSV, index=False)
 print(f"Saved {OUT_CSV}")
 
@@ -112,7 +129,7 @@ print(f"Saved {OUT_CSV}")
 # -----------------------------
 
 df_out.to_sql(
-    name=TARGET_TABLE,
+    name=DAR_TARGET_TABLE,
     schema=TARGET_SCHEMA,
     con=engine,
     if_exists="replace",
@@ -121,7 +138,7 @@ df_out.to_sql(
     method=None,
     dtype={
         "index": NVARCHAR(255),
-        "project_code": NVARCHAR(255),
+        #"project_code": NVARCHAR(255),
         "project_title_en": UnicodeText(),        # NVARCHAR(MAX)
         "project_description_en": UnicodeText(),  # NVARCHAR(MAX)
         "project_title_ar": UnicodeText(),        # NVARCHAR(MAX)
@@ -131,4 +148,4 @@ df_out.to_sql(
     }
 )
 
-print(f"Saved to SQL Server: {TARGET_SCHEMA}.{TARGET_TABLE}")
+print(f"Saved to SQL Server: {TARGET_SCHEMA}.{DAR_TARGET_TABLE}")
