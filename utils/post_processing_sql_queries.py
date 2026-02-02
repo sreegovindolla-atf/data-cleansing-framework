@@ -13,9 +13,13 @@ QUERIES = [
            master_project_title_ar,
            input_text,
            master_project_amount_actual,
+           FORMAT(master_project_amount_actual, 'N2') AS formatted_master_project_amount_actual,
            master_project_oda_amount,
+           FORMAT(master_project_oda_amount, 'N2') AS formatted_master_project_oda_amount,
            master_project_ge_amount,
-           master_project_off_amount
+           FORMAT(master_project_ge_amount, 'N2') AS formatted_master_project_ge_amount,
+           master_project_off_amount,
+           FORMAT(master_project_off_amount, 'N2') AS formatted_master_project_off_amount
        FROM silver.MasterTable_extracted""",
 
     """INSERT INTO silver.cleaned_project
@@ -27,15 +31,23 @@ QUERIES = [
            project_title_ar,
            project_description_en,
            project_description_ar,
-           beneficiary_count,
+           CASE 
+            WHEN beneficiary_group_name like '%famil%' THEN beneficiary_count * 4
+            ELSE beneficiary_count
+           END AS beneficiary_count,
            beneficiary_group_name,
            input_text,
            project_amount_actual,
+           FORMAT(project_amount_actual, 'N2') AS formatted_project_amount_actual,
            project_amount_extracted,
+           FORMAT(project_amount_extracted, 'N2') AS formatted_project_amount_extracted,
            project_oda_amount,
+           FORMAT(project_oda_amount, 'N2') AS formatted_project_oda_amount,
            project_ge_amount,
-           project_off_amount
-       FROM silver.MasterTable_extracted""",
+           FORMAT(project_ge_amount, 'N2') AS formatted_project_ge_amount,
+           project_off_amount,
+           FORMAT(project_off_amount, 'N2') AS formatted_project_off_amount
+       FROM silver.MasterTable_extracted;""",
 
     """INSERT INTO silver.cleaned_project_asset
        SELECT DISTINCT
