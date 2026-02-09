@@ -12,16 +12,16 @@ from sqlalchemy import text as sql_text
 # -----------------------------
 # Config
 # -----------------------------
-TOP_K = 30
+TOP_K = 20
 SIMILARITY_THRESHOLD = 0.80
 
 #EMB_TABLE = "silver.project_embeddings"
-DAR_EMB_TABLE = "silver.dar_project_embeddings"
+DAR_EMB_TABLE = "silver.project_embeddings"
 DENORM_TABLE = "dbo.denorm_MasterTable"
 
 OUT_SCHEMA = "silver"
-#OUT_TABLE  = "similar_projects"
-DAR_OUT_TABLE  = "dar_similar_projects"
+OUT_TABLE  = "similar_projects"
+#DAR_OUT_TABLE  = "dar_similar_projects"
 
 FILTER_COLS = ["country_name_en", "donor_name_en", "implementing_org_en"]
 SEASONAL_SUBSECTOR = "Seasonal programmes"
@@ -45,8 +45,8 @@ engine = get_sql_server_engine()
 # Load embeddings + join filter cols (DEDUPED)
 # -----------------------------
 VIEW_SCHEMA = "silver"
-#VIEW_NAME = "vw_project_similarity_source"
-DAR_VIEW_NAME = "vw_dar_project_similarity_source"
+VIEW_NAME = "vw_project_similarity_source"
+#DAR_VIEW_NAME = "vw_dar_project_similarity_source"
 
 #CREATE_VIEW_SQL = f"""
 #CREATE OR ALTER VIEW {VIEW_SCHEMA}.{VIEW_NAME}
@@ -103,8 +103,8 @@ DAR_VIEW_NAME = "vw_dar_project_similarity_source"
 #);
 #"""
 
-CREATE_DAR_VIEW_SQL = f"""
-CREATE OR ALTER VIEW {VIEW_SCHEMA}.{DAR_VIEW_NAME}
+CREATE_VIEW_SQL = f"""
+CREATE OR ALTER VIEW {VIEW_SCHEMA}.{VIEW_NAME}
 AS
 
 SELECT
@@ -121,19 +121,19 @@ SELECT
   , b.SubSectorNameEnglish                AS subsector_name_en
   , b.amount
   , a.embedding
-FROM silver.dar_project_embeddings a
+FROM silver.project_embeddings a
 LEFT JOIN [dbo].[MasterTableDenormalizedCleanedFinal] b
   ON a.[index] = b.[index]
 ;
 """
 
-print(f"[VIEW] Creating/updating view {VIEW_SCHEMA}.{DAR_VIEW_NAME} ...")
+print(f"[VIEW] Creating/updating view {VIEW_SCHEMA}.{VIEW_NAME} ...")
 with engine.begin() as conn:
-    conn.execute(sql_text(CREATE_DAR_VIEW_SQL))
+    conn.execute(sql_text(CREATE_VIEW_SQL))
 print("[VIEW] View ready")
 
 
-sql = f"SELECT * FROM {VIEW_SCHEMA}.{DAR_VIEW_NAME};"
+sql = f"SELECT * FROM {VIEW_SCHEMA}.{VIEW_NAME};"
 print("[LOAD] Loading embeddings + metadata from VIEW...")
 df = pd.read_sql_query(text(sql), engine).fillna("").reset_index(drop=True)
 print(f"[LOAD] Loaded {len(df):,} rows from view")
@@ -299,7 +299,7 @@ print(f"Saved {OUT_CSV}")
 # -----------------------------
 print("[SQL] Writing similarity results to SQL Server...")
 df_out.to_sql(
-    name=DAR_OUT_TABLE,
+    name=OUT_TABLE,
     schema=OUT_SCHEMA,
     con=engine,
     if_exists="replace",
@@ -343,76 +343,103 @@ df_out.to_sql(
     },
 )
 
-print(f"Saved to SQL Server: {OUT_SCHEMA}.{DAR_OUT_TABLE}")
+print(f"Saved to SQL Server: {OUT_SCHEMA}.{OUT_TABLE}")
 
 # -----------------------------
 # ADFD projects
 # -----------------------------
-#INSERT_ADFD_SQL = f"""
-#;WITH adfd AS (
-#    SELECT
-#        cp.[index],
-#        cp.project_code,
-#        cp.project_title_en,
-#        cp.project_description_en,
-#        cp.project_title_ar,
-#        cp.project_description_ar,
-#        mt.SourceID             AS source_id
-#    FROM silver.cleaned_project cp
-#    JOIN dbo.MasterTableDenormalizedCleanedFinal mt
-#        ON cp.[index] = mt.[index]
-#    WHERE cp.[index] LIKE 'ADFD%'
-#      AND mt.SourceID IS NOT NULL
-#)
-#INSERT INTO {OUT_SCHEMA}.{OUT_TABLE} (
-#      [index]
-#    , source_id
-#    , project_code
-#    , project_title_en
-#    , project_description_en
-#    , project_title_ar
-#    , project_description_ar
-#    , similar_index
-#    , similar_source_id
-#    , similar_project_code
-#    , similar_project_title_en
-#    , similar_project_description_en
-#    , similar_project_title_ar
-#    , similar_project_description_ar
-#    , similarity_score
-#    , source_id_match
-#    , ts_inserted
-#)
-#SELECT
-#    a.[index],
-#    a.source_id,
-#    a.project_code,
-#    a.project_title_en,
-#    a.project_description_en,
-#    a.project_title_ar,
-#    a.project_description_ar,
-#
-#    b.[index]                AS similar_index,
-#    b.source_id               AS similar_source_id,
-#    b.project_code           AS similar_project_code,
-#    b.project_title_en       AS similar_project_title_en,
-#    b.project_description_en AS similar_project_description_en,
-#    b.project_title_ar       AS similar_project_title_ar,
-#    b.project_description_ar AS similar_project_description_ar,
-#
-#    CAST(1.0 AS FLOAT)       AS similarity_score,
-#    CASE
-#        WHEN a.source_id = b.source_id THEN 1
-#        ELSE 0
-#        END AS source_id_match,
-#    CURRENT_TIMESTAMP        AS ts_inserted
-#FROM adfd a
-#JOIN adfd b
-#  ON a.source_id = b.source_id
-# AND a.[index] <> b.[index];
-#"""
-#
-#print("[ADFD] Appending ADFD similarity rules...")
-#with engine.begin() as conn:
-#    rows = conn.execute(sql_text(INSERT_ADFD_SQL)).rowcount
-#print(f"[INFO] Appended ADFD similar projects: {rows} rows")
+INSERT_ADFD_SQL = f"""
+;WITH adfd AS (
+    SELECT
+        cp.[index],
+        mt.SourceID             AS source_id,
+        cp.master_project_title_en,
+        mt.DescriptionEnglish           AS master_project_description_en,
+        cp.master_project_title_ar,
+        mt.DescriptionArabic           AS master_project_description_ar
+        , mt.CountryNameEnglish                  AS country_name_en
+        , mt.DonorNameEnglish                    AS donor_name_en
+        , mt.ImplementingOrganizationEnglish     AS implementing_org_en
+        , mt.year
+        , mt.SubSectorNameEnglish                AS subsector_name_en
+        , mt.amount
+    FROM silver.cleaned_master_project cp
+    JOIN dbo.MasterTableDenormalizedCleanedFinal mt
+        ON cp.[index] = mt.[index]
+    WHERE cp.[index] LIKE 'ADFD%'
+      AND mt.SourceID IS NOT NULL
+)
+INSERT INTO {OUT_SCHEMA}.{OUT_TABLE} (
+      [index]
+    , source_id
+    , master_project_title_en
+    , master_project_description_en
+    , master_project_title_ar
+    , master_project_description_ar
+    , country_name_en
+    , donor_name_en
+    , implementing_org_en
+    , year
+    , subsector_name_en
+    , amount
+
+    , similar_index
+    , similar_source_id
+    , similar_master_project_title_en
+    , similar_master_project_description_en
+    , similar_master_project_title_ar
+    , similar_master_project_description_ar
+    , similar_project_country_name_en
+    , similar_project_donor_name_en
+    , similar_project_implementing_org_en
+    , similar_project_year
+    , similar_project_subsector_name_en
+    , similar_project_amount
+
+    , similarity_score
+    , source_id_match
+    , ts_inserted
+)
+SELECT
+    a.[index],
+    a.source_id,
+    a.master_project_title_en,
+    a.master_project_description_en,
+    a.master_project_title_ar,
+    a.master_project_description_ar
+    , a.country_name_en
+    , a.donor_name_en
+    , a.implementing_org_en
+    , a.year
+    , a.subsector_name_en
+    , a.amount,
+
+    b.[index]                           AS similar_index,
+    b.source_id                         AS similar_source_id,
+    b.master_project_title_en           AS similar_master_project_title_en,
+    b.master_project_description_en     AS similar_master_project_description_en,
+    b.master_project_title_ar           AS similar_master_project_title_ar,
+    b.master_project_description_ar     AS similar_master_project_description_ar
+    , b.country_name_en                 AS  similar_project_country_name_en
+    , b.donor_name_en                   AS  similar_project_donor_name_en
+    , b.implementing_org_en             AS  similar_project_implementing_org_en
+    , b.year                            AS  similar_project_year
+    , b.subsector_name_en               AS  similar_project_subsector_name_en
+    , b.amount                          AS  similar_project_amount
+
+    , CAST(1.0 AS FLOAT)       AS similarity_score,
+    CASE
+        WHEN a.source_id = b.source_id THEN 1
+        ELSE 0
+        END AS source_id_match,
+    CURRENT_TIMESTAMP        AS ts_inserted
+FROM adfd a
+JOIN adfd b
+  ON a.source_id = b.source_id
+ AND a.[index] <> b.[index];
+"""
+
+print("[ADFD] Appending ADFD similarity rules...")
+with engine.begin() as conn:
+    rows = conn.execute(sql_text(INSERT_ADFD_SQL)).rowcount
+print(f"[INFO] Appended ADFD similar projects: {rows} rows")

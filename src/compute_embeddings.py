@@ -16,8 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # -----------------------------
 MODEL_NAME = "all-MiniLM-L6-v2"
 TARGET_SCHEMA = "silver"
-#TARGET_TABLE = "project_embeddings"
-DAR_TARGET_TABLE = "dar_project_embeddings"
+TARGET_TABLE = "project_embeddings"
+#DAR_TARGET_TABLE = "dar_project_embeddings"
 
 # Text columns used to build embedding
 TEXT_COLS = ["master_project_title_en", "master_project_description_en", "master_project_title_ar", "master_project_description_ar"]
@@ -55,18 +55,6 @@ engine = get_sql_server_engine()
 # -----------------------------
 # Read from SQL Server
 # -----------------------------
-#sql = f"""
-#SELECT DISTINCT
-#    [index],
-#    project_code,
-#    project_title_en,
-#    project_description_en,
-#    project_title_ar,
-#    project_description_ar
-#FROM {TABLE}
-#WHERE [index] NOT LIKE '%ADFD-%'
-#"""
-
 sql = f"""
 SELECT DISTINCT
     a.[index]
@@ -78,9 +66,9 @@ FROM {TABLE} a
 LEFT JOIN dbo.MasterTableDenormalizedCleanedFinal b
     ON a.[index] = b.[index]
 WHERE 1=1
---AND [index] NOT LIKE '%ADFD-%'
+AND a.[index] NOT LIKE '%ADFD-%'
 --Dar Al Ber
-AND b.DonorID = 30
+--AND b.DonorID = 30
 """
 
 df_src = pd.read_sql_query(text(sql), engine).fillna("").reset_index(drop=True)
@@ -122,7 +110,7 @@ df_out["ts_inserted"] = datetime.now(timezone.utc)
 RUN_OUTPUT_DIR = Path("data/outputs/embeddings")
 RUN_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-OUT_CSV = RUN_OUTPUT_DIR / "dar_project_embeddings.csv"
+OUT_CSV = RUN_OUTPUT_DIR / "project_embeddings.csv"
 df_out.to_csv(OUT_CSV, index=False)
 print(f"Saved {OUT_CSV}")
 
@@ -131,7 +119,7 @@ print(f"Saved {OUT_CSV}")
 # -----------------------------
 
 df_out.to_sql(
-    name=DAR_TARGET_TABLE,
+    name=TARGET_TABLE,
     schema=TARGET_SCHEMA,
     con=engine,
     if_exists="replace",
@@ -150,4 +138,4 @@ df_out.to_sql(
     }
 )
 
-print(f"Saved to SQL Server: {TARGET_SCHEMA}.{DAR_TARGET_TABLE}")
+print(f"Saved to SQL Server: {TARGET_SCHEMA}.{TARGET_TABLE}")
