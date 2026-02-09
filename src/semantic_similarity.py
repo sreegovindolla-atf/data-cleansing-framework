@@ -110,10 +110,10 @@ AS
 SELECT
     a.[index]
   , b.SourceID                            AS source_id
-  , a.project_title_en
-  , a.project_description_en
-  , a.project_title_ar
-  , a.project_description_ar
+  , a.master_project_title_en
+  , a.master_project_description_en
+  , a.master_project_title_ar
+  , a.master_project_description_ar
   , b.year
   , b.CountryNameEnglish                  AS country_name_en
   , b.DonorNameEnglish                    AS donor_name_en
@@ -186,10 +186,10 @@ def run_grouped_faiss(df_slice: pd.DataFrame, group_cols: list[str]):
                     "index": src["index"],
                     "source_id": src["source_id"],
                     #"project_code": src["project_code"],
-                    "project_title_en": src["project_title_en"],
-                    "project_description_en": src["project_description_en"],
-                    "project_title_ar": src["project_title_ar"],
-                    "project_description_ar": src["project_description_ar"],
+                    "master_project_title_en": src["master_project_title_en"],
+                    "master_project_description_en": src["master_project_description_en"],
+                    "master_project_title_ar": src["master_project_title_ar"],
+                    "master_project_description_ar": src["master_project_description_ar"],
                     "country_name_en": src["country_name_en"],
                     "donor_name_en": src["donor_name_en"],
                     "implementing_org_en": src["implementing_org_en"],
@@ -200,10 +200,10 @@ def run_grouped_faiss(df_slice: pd.DataFrame, group_cols: list[str]):
                     "similar_index": sim["index"],
                     "similar_source_id": sim["source_id"],
                     #"similar_project_code": sim["project_code"],
-                    "similar_project_title_en": sim["project_title_en"],
-                    "similar_project_description_en": sim["project_description_en"],
-                    "similar_project_title_ar": sim["project_title_ar"],
-                    "similar_project_description_ar": sim["project_description_ar"],
+                    "similar_master_project_title_en": sim["master_project_title_en"],
+                    "similar_master_project_description_en": sim["master_project_description_en"],
+                    "similar_master_project_title_ar": sim["master_project_title_ar"],
+                    "similar_master_project_description_ar": sim["master_project_description_ar"],
                     "similar_project_country_name_en": sim["country_name_en"],
                     "similar_project_donor_name_en": sim["donor_name_en"],
                     "similar_project_implementing_org_en": sim["implementing_org_en"],
@@ -310,10 +310,10 @@ df_out.to_sql(
         "index": NVARCHAR(255),
         "source_id": NVARCHAR(255),
         #"project_code": NVARCHAR(255),
-        "project_title_en": UnicodeText(),
-        "project_description_en": UnicodeText(),
-        "project_title_ar": UnicodeText(),
-        "project_description_ar": UnicodeText(),
+        "master_project_title_en": UnicodeText(),
+        "master_project_description_en": UnicodeText(),
+        "master_project_title_ar": UnicodeText(),
+        "master_project_description_ar": UnicodeText(),
         "country_name_en": NVARCHAR(255),
         "donor_name_en": NVARCHAR(255),
         "implementing_org_en": NVARCHAR(255),
@@ -324,10 +324,10 @@ df_out.to_sql(
         "similar_index": NVARCHAR(255),
         "similar_source_id": NVARCHAR(255),
         #"similar_project_code": NVARCHAR(255),
-        "similar_project_title_en": UnicodeText(),
-        "similar_project_description_en": UnicodeText(),
-        "similar_project_title_ar": UnicodeText(),
-        "similar_project_description_ar": UnicodeText(),
+        "similar_master_project_title_en": UnicodeText(),
+        "similar_master_project_description_en": UnicodeText(),
+        "similar_master_project_title_ar": UnicodeText(),
+        "similar_master_project_description_ar": UnicodeText(),
         "similar_project_country_name_en": NVARCHAR(255),
         "similar_project_donor_name_en": NVARCHAR(255),
         "similar_project_implementing_org_en": NVARCHAR(255),

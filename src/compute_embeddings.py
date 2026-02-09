@@ -20,8 +20,8 @@ TARGET_SCHEMA = "silver"
 DAR_TARGET_TABLE = "dar_project_embeddings"
 
 # Text columns used to build embedding
-TEXT_COLS = ["project_title_en", "project_description_en", "project_title_ar", "project_description_ar"]
-TABLE = "dbo.MasterTableDenormalizedCleanedFinal"
+TEXT_COLS = ["master_project_title_en", "master_project_description_en", "master_project_title_ar", "master_project_description_ar"]
+TABLE = "silver.cleaned_master_project"
 
 # =====================================
 # helpers
@@ -69,16 +69,18 @@ engine = get_sql_server_engine()
 
 sql = f"""
 SELECT DISTINCT
-    [index]
-    , ProjectTitleEnglish           AS project_title_en
-    , DescriptionEnglish            AS project_description_en
-    , ProjectTitleArabic            AS project_title_ar
-    , DescriptionArabic             AS project_description_ar
-FROM {TABLE}
+    a.[index]
+    , a.master_project_title_en
+    , b.DescriptionEnglish              AS master_project_description_en      
+    , a.master_project_title_ar         
+    , b.DescriptionArabic               AS master_project_description_ar 
+FROM {TABLE} a
+LEFT JOIN dbo.MasterTableDenormalizedCleanedFinal b
+    ON a.[index] = b.[index]
 WHERE 1=1
 --AND [index] NOT LIKE '%ADFD-%'
 --Dar Al Ber
-AND DonorID = 30
+AND b.DonorID = 30
 """
 
 df_src = pd.read_sql_query(text(sql), engine).fillna("").reset_index(drop=True)
@@ -110,7 +112,7 @@ if len(base_embeddings) != len(df_src):
 # Build output dataframe (NO iloc loop needed)
 # -----------------------------
 #df_out = df_src[["index", "project_code", "project_title_en", "project_description_en", "project_title_ar", "project_description_ar"]].copy()
-df_out = df_src[["index", "project_title_en", "project_description_en", "project_title_ar", "project_description_ar"]].copy()
+df_out = df_src[["index", "master_project_title_en", "master_project_description_en", "master_project_title_ar", "master_project_description_ar"]].copy()
 df_out["embedding"] = [json.dumps(e.tolist()) for e in base_embeddings]
 df_out["ts_inserted"] = datetime.now(timezone.utc)
 
@@ -139,10 +141,10 @@ df_out.to_sql(
     dtype={
         "index": NVARCHAR(255),
         #"project_code": NVARCHAR(255),
-        "project_title_en": UnicodeText(),        # NVARCHAR(MAX)
-        "project_description_en": UnicodeText(),  # NVARCHAR(MAX)
-        "project_title_ar": UnicodeText(),        # NVARCHAR(MAX)
-        "project_description_ar": UnicodeText(),  # NVARCHAR(MAX)
+        "master_project_title_en": UnicodeText(),        # NVARCHAR(MAX)
+        "master_project_description_en": UnicodeText(),  # NVARCHAR(MAX)
+        "master_project_title_ar": UnicodeText(),        # NVARCHAR(MAX)
+        "master_project_description_ar": UnicodeText(),  # NVARCHAR(MAX)
         "embedding": UnicodeText(),               # NVARCHAR(MAX) 
         "ts_inserted": DateTime(),       # or DateTime(timezone=True)
     }
