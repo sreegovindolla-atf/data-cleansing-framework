@@ -39,9 +39,21 @@ from utils.extraction_helpers import (
 # -----------------------
 parser = argparse.ArgumentParser()
 parser.add_argument("--run-id", required=True)
+
+# Boolean flag:
+# - If provided => True
+# - If omitted  => False
+parser.add_argument(
+    "--force-refresh",
+    action="store_true",
+    help="If set, bypass cache reads and re-run extraction even if index exists in cache."
+)
+
 args = parser.parse_args()
 
 RUN_ID = args.run_id
+FORCE_REFRESH = args.force_refresh
+
 RUN_OUTPUT_DIR = Path("data/outputs") / RUN_ID
 RUN_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -50,6 +62,7 @@ OUT_JSON  = RUN_OUTPUT_DIR / f"{RUN_ID}_combined_extraction_results.json"
 
 processed_indexes = load_processed_indexes_from_jsonl(OUT_JSONL)
 print(f"[INFO] Already in JSONL: {len(processed_indexes)} indexes")
+print(f"[INFO] Force refresh mode: {FORCE_REFRESH}")
 
 # Cache file (stores mapping: text_hash -> AnnotatedDocument)
 CACHE_PKL = RUN_OUTPUT_DIR / f"{RUN_ID}_lx_cache.pkl"
@@ -72,14 +85,15 @@ engine = get_sql_server_engine()
 # =====================================
 # SOURCE QUERY
 # =====================================
+# Update the source query's WHERE condition depending on which indices are to be processed
 SOURCE_QUERY = """
 SELECT *
-FROM dbo.MasterTableDenormalizedCleanedFinal a
-WHERE NOT EXISTS (
-    SELECT 1
-    FROM silver.MasterTable_extracted b
-    WHERE a.[index] = b.[index]
-);
+FROM dbo.MasterTableDenormalizedCleanedFinal
+WHERE
+[index] = 'DACRE-2019-006' or
+[index] = 'DACRE-2019-046' or
+[index] = 'DACRE-2019-068' or
+[index] = 'DACRE-2019-114'
 """
 df_input = pd.read_sql(SOURCE_QUERY, engine)
 
@@ -93,18 +107,26 @@ CHECKPOINT_EVERY = 50
 cache = load_cache(CACHE_PKL)
 print(f"[INFO] Loaded cache entries: {len(cache)} from {CACHE_PKL.name}")
 
-processed_this_run = 0
+cache_hits = 0
+fresh_calls = 0
+processed_this_run_indexes = set()
 
-for i, row in enumerate(df_input.itertuples(index=False), start=1):
-    index = getattr(row, "Index", None)
+for i, row in enumerate(df_input.to_dict("records"), start=1):
+    # ---- robust index read (SQL column is [index], pandas may preserve as 'index')
+    index = row.get("index", None) or row.get("Index", None)
+    index = safe_str(index)
 
-    # if index in processed_indexes:
-    #     continue
+    if not index:
+        continue
 
-    title_en = safe_str(getattr(row, "ProjectTitleEnglish", "") or "")
-    description_en = safe_str(getattr(row, "DescriptionEnglish", "") or "")
-    title_ar = safe_str(getattr(row, "ProjectTitleArabic", "") or "")
-    description_ar = safe_str(getattr(row, "DescriptionArabic", "") or "")
+    # If NOT force refresh: skip index already written to JSONL
+    if (not FORCE_REFRESH) and (index in processed_indexes):
+        continue
+
+    title_en = safe_str(row.get("ProjectTitleEnglish", "") or "")
+    description_en = safe_str(row.get("DescriptionEnglish", "") or "")
+    title_ar = safe_str(row.get("ProjectTitleArabic", "") or "")
+    description_ar = safe_str(row.get("DescriptionArabic", "") or "")
 
     text_bilingual = build_labeled_bilingual_input(
         title_en=title_en,
@@ -113,22 +135,30 @@ for i, row in enumerate(df_input.itertuples(index=False), start=1):
         desc_ar=description_ar,
     )
 
-    # Skip only if BOTH languages are empty
-    if not text_bilingual:
+    # Skip only if BOTH languages are empty / no content
+    if not text_bilingual or not text_bilingual.strip():
         continue
 
-    master_project_amount_actual = getattr(row, "Amount", None)
-    master_project_oda_amount = getattr(row, "ODA_Amount", None)
-    master_project_ge_amount = getattr(row, "GE_Amount", None)
-    master_project_off_amount = getattr(row, "OFF_Amount", None)
+    master_project_amount_actual = row.get("Amount", None)
+    master_project_oda_amount = row.get("ODA_Amount", None)
+    master_project_ge_amount = row.get("GE_Amount", None)
+    master_project_off_amount = row.get("OFF_Amount", None)
+
+    # Optional: add nonce for debugging to ensure upstream caching can't return identical output
+    # debug_text = text_bilingual + f"\n\nRUN_NONCE: {NONCE}"
+    # h = text_hash(debug_text)
+    # input_for_llm = debug_text
 
     h = text_hash(text_bilingual)
+    input_for_llm = text_bilingual
 
-    if h in cache:
-        result = cache[h]
-    else:
+    # -----------------------
+    # cache policy
+    # -----------------------
+    if FORCE_REFRESH:
+        # ALWAYS call LLM, NEVER read cache
         result = lx.extract(
-            text_or_documents=text_bilingual,
+            text_or_documents=input_for_llm,
             prompt_description=PROMPT,
             examples=EXAMPLES,
             model_id="gpt-4.1-mini",
@@ -136,38 +166,52 @@ for i, row in enumerate(df_input.itertuples(index=False), start=1):
             fence_output=True,
             use_schema_constraints=False,
         )
-        cache[h] = result  # only update cache on fresh extraction
+        cache[h] = result  # overwrite / update cache with fresh result
+        fresh_calls += 1
+    else:
+        if h in cache:
+            result = cache[h]
+            cache_hits += 1
+        else:
+            result = lx.extract(
+                text_or_documents=input_for_llm,
+                prompt_description=PROMPT,
+                examples=EXAMPLES,
+                model_id="gpt-4.1-mini",
+                api_key=os.environ.get("OPENAI_API_KEY"),
+                fence_output=True,
+                use_schema_constraints=False,
+            )
+            cache[h] = result
+            fresh_calls += 1
 
     # Convert result -> dict
     d = annotated_to_dict(result)
 
-    # Build the output record in the SAME structure your post-processing expects
-    out = {}
-    out["extractions"] = d.get("extractions", [])
-    out["text"] = text_bilingual 
-    out["index"] = index
-    out["master_project_amount_actual"] = master_project_amount_actual
-    out["master_project_oda_amount"] = master_project_oda_amount
-    out["master_project_ge_amount"] = master_project_ge_amount
-    out["master_project_off_amount"] = master_project_off_amount
+    out = {
+        "extractions": d.get("extractions", []),
+        "text": text_bilingual,   # keep original (no nonce)
+        "index": index,
+        "master_project_amount_actual": master_project_amount_actual,
+        "master_project_oda_amount": master_project_oda_amount,
+        "master_project_ge_amount": master_project_ge_amount,
+        "master_project_off_amount": master_project_off_amount,
+    }
 
-    # Keep document_id if available
     if d.get("document_id"):
         out["document_id"] = d.get("document_id")
 
-    # UPSERT JSONL by index (rewrite only if same index is reprocessed)
-    #jsonl_upsert_by_index(OUT_JSONL, out, index_key="index")
-    # Append for historical run
-    _jsonl_append(OUT_JSONL, out)
-    processed_indexes.add(index)
-    processed_this_run += 1
+    jsonl_upsert_by_index(OUT_JSONL, out, index_key="index")
+
+    processed_this_run_indexes.add(index)
 
     if i % CHECKPOINT_EVERY == 0:
-        # Snapshot JSON rebuilt from JSONL (valid JSON)
         jsonl_to_json_snapshot(OUT_JSONL, OUT_JSON)
-        # Save cache safely
         save_cache(cache, CACHE_PKL)
-        print(f"[checkpoint] processed={i} | upserted_this_run={processed_this_run} | cache={len(cache)}")
+        print(
+            f"[checkpoint] rows_seen={i} | upserted_this_run={len(processed_this_run_indexes)} "
+            f"| cache_hits={cache_hits} | fresh_calls={fresh_calls} | cache_size={len(cache)}"
+        )
 
 # final save
 jsonl_to_json_snapshot(OUT_JSONL, OUT_JSON)
@@ -175,4 +219,8 @@ save_cache(cache, CACHE_PKL)
 
 print(f"Saved extraction JSONL: {OUT_JSONL}")
 print(f"Saved debug JSON:      {OUT_JSON}")
-print(f"Saved cache:           {CACHE_PKL}  (entries={len(cache)})")
+print(f"Saved cache:           {CACHE_PKL} (entries={len(cache)})")
+print(f"[DONE] upserted_this_run={len(processed_this_run_indexes)} | cache_hits={cache_hits} | fresh_calls={fresh_calls}")
+
+PROCESSED_TXT = RUN_OUTPUT_DIR / f"{RUN_ID}_processed_indexes.txt"
+PROCESSED_TXT.write_text("\n".join(sorted(processed_this_run_indexes)), encoding="utf-8")

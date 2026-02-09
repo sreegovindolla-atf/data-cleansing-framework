@@ -21,7 +21,7 @@ from utils.post_processing_helpers import (
     fmt_mp,
     fmt_prj,
     parse_langextract_grouped_pairs,
-    _is_blank
+    _is_blank,
 )
 
 from utils.post_processing_sql_queries import QUERIES
@@ -37,7 +37,16 @@ RUN_ID = args.run_id
 RUN_OUTPUT_DIR = Path("data/outputs") / RUN_ID
 
 INPUT_JSONL = RUN_OUTPUT_DIR / f"{RUN_ID}_combined_extraction_results.jsonl"
-OUT_CSV     = RUN_OUTPUT_DIR / f"{RUN_ID}_combined_extraction.csv"
+OUT_CSV = RUN_OUTPUT_DIR / f"{RUN_ID}_combined_extraction.csv"
+
+PROCESSED_TXT = RUN_OUTPUT_DIR / f"{RUN_ID}_processed_indexes.txt"
+if not PROCESSED_TXT.exists():
+    raise FileNotFoundError(f"Processed index list not found: {PROCESSED_TXT}")
+
+processed_run_indexes = set(
+    x.strip() for x in PROCESSED_TXT.read_text(encoding="utf-8").splitlines() if x.strip()
+)
+print(f"[INFO] Incremental mode: {len(processed_run_indexes)} indexes to post-process")
 
 # -----------------------
 # SQL Server (Windows Auth)
@@ -53,10 +62,10 @@ def get_sql_server_engine():
     return create_engine(f"mssql+pyodbc:///?odbc_connect={params}", fast_executemany=True)
 
 TARGET_SCHEMA = "silver"
-TARGET_TABLE  = "MasterTable_extracted"
+TARGET_TABLE = "MasterTable_extracted"
 
 # -----------------------
-# helpers for code continuity
+# helpers
 # -----------------------
 def _trail_int(s: str):
     if s is None:
@@ -73,46 +82,55 @@ if not INPUT_JSONL.exists():
 engine = get_sql_server_engine()
 
 # Load existing mappings from target table (so codes don't restart)
-index_to_master_code = {}          # index -> master_project_code (1:1)
-index_title_to_prj_code = {}       # (index, project_title_en) -> project_code (stable reuse)
+index_to_master_code = {}  # index -> master_project_code (1:1)
+index_title_to_prj_code = {}  # (index, project_title_en) -> project_code (stable reuse)
 
 max_master_num = 0
-master_to_max_prj = {}             # master_project_code -> max project suffix
+master_to_max_prj = {}  # master_project_code -> max project suffix
 
 try:
     existing_master = pd.read_sql(
-        sql_text(f"""
+        sql_text(
+            f"""
             SELECT [index], master_project_code
             FROM {TARGET_SCHEMA}.{TARGET_TABLE}
             WHERE [index] IS NOT NULL
               AND master_project_code IS NOT NULL
-        """),
-        engine
+        """
+        ),
+        engine,
     )
 
     existing_master["index"] = existing_master["index"].astype(str)
-    existing_master = existing_master.sort_values(["index", "master_project_code"]).drop_duplicates("index", keep="first")
-    index_to_master_code = dict(zip(existing_master["index"], existing_master["master_project_code"]))
+    existing_master = (
+        existing_master.sort_values(["index", "master_project_code"])
+        .drop_duplicates("index", keep="first")
+    )
+    index_to_master_code = dict(
+        zip(existing_master["index"], existing_master["master_project_code"])
+    )
 
     master_nums = existing_master["master_project_code"].apply(_trail_int).dropna().tolist()
     max_master_num = max(master_nums) if master_nums else 0
 
     existing_project = pd.read_sql(
-        sql_text(f"""
+        sql_text(
+            f"""
             SELECT [index], project_title_en, project_code, master_project_code
             FROM {TARGET_SCHEMA}.{TARGET_TABLE}
             WHERE [index] IS NOT NULL
               AND project_title_en IS NOT NULL
               AND project_code IS NOT NULL
               AND master_project_code IS NOT NULL
-        """),
-        engine
+        """
+        ),
+        engine,
     )
 
     existing_project["index"] = existing_project["index"].astype(str)
-    existing_project = existing_project.sort_values(["index", "master_project_code", "project_code"]).drop_duplicates(
-        ["index", "project_title_en"],
-        keep="first"
+    existing_project = (
+        existing_project.sort_values(["index", "master_project_code", "project_code"])
+        .drop_duplicates(["index", "project_title_en"], keep="first")
     )
 
     index_title_to_prj_code = {
@@ -147,12 +165,18 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
         doc = json.loads(line)
         text = doc.get("text")
         index = doc.get("index")
+        index_key = str(index) if index is not None else None
+
+        # Only post-process indexes that were processed in THIS extraction run
+        if not index_key or index_key not in processed_run_indexes:
+            continue
+
         document_id = doc.get("document_id") or doc.get("_document_id") or doc.get("doc_id")
 
         master_project_amount_actual = to_float_or_none(doc.get("master_project_amount_actual"))
-        master_project_oda_amount    = to_float_or_none(doc.get("master_project_oda_amount"))
-        master_project_ge_amount     = to_float_or_none(doc.get("master_project_ge_amount"))
-        master_project_off_amount    = to_float_or_none(doc.get("master_project_off_amount"))
+        master_project_oda_amount = to_float_or_none(doc.get("master_project_oda_amount"))
+        master_project_ge_amount = to_float_or_none(doc.get("master_project_ge_amount"))
+        master_project_off_amount = to_float_or_none(doc.get("master_project_off_amount"))
 
         reconstructed = parse_langextract_grouped_pairs(doc)
 
@@ -167,22 +191,19 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
 
         master_project_title_en = None
         master_project_title_ar = None
-
         for x in exs:
             if x["cls"] == "master_project_title_en" and master_project_title_en is None:
                 master_project_title_en = smart_title_case(x["val"])
             elif x["cls"] == "master_project_title_ar" and master_project_title_ar is None:
                 master_project_title_ar = str(x["val"]).strip()
 
-        index_key = str(index) if index is not None else None
-
-        if index_key and index_key in index_to_master_code:
+        # Reuse master_project_code if exists; otherwise generate NEW
+        if index_key in index_to_master_code:
             master_project_code = index_to_master_code[index_key]
         else:
             next_master_num += 1
             master_project_code = fmt_mp(next_master_num)
-            if index_key:
-                index_to_master_code[index_key] = master_project_code
+            index_to_master_code[index_key] = master_project_code
 
         if master_project_code not in master_to_next_prj:
             master_to_next_prj[master_project_code] = master_to_max_prj.get(master_project_code, 0)
@@ -227,7 +248,9 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
 
         def backfill_project_amount_extracted(prj_code: str, amt: float):
             for ridx in row_indices_by_project.get(prj_code, []):
-                if rows[ridx].get("project_amount_extracted") is None or pd.isna(rows[ridx].get("project_amount_extracted")):
+                if rows[ridx].get("project_amount_extracted") is None or pd.isna(
+                    rows[ridx].get("project_amount_extracted")
+                ):
                     rows[ridx]["project_amount_extracted"] = amt
 
         def get_ben(prj_code):
@@ -356,9 +379,17 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                     if project_amount_extracted_map.get(current_project_code) is None:
                         project_amount_extracted_map[current_project_code] = a
                     backfill_project_amount_extracted(current_project_code, a)
-                    if current_asset is not None and current_asset.get("project_code") == current_project_code and is_missing_or_bad(current_asset.get("project_amount_extracted")):
+                    if (
+                        current_asset is not None
+                        and current_asset.get("project_code") == current_project_code
+                        and is_missing_or_bad(current_asset.get("project_amount_extracted"))
+                    ):
                         current_asset["project_amount_extracted"] = a
-                    if current_item is not None and current_item.get("project_code") == current_project_code and is_missing_or_bad(current_item.get("project_amount_extracted")):
+                    if (
+                        current_item is not None
+                        and current_item.get("project_code") == current_project_code
+                        and is_missing_or_bad(current_item.get("project_amount_extracted"))
+                    ):
                         current_item["project_amount_extracted"] = a
                 continue
 
@@ -545,7 +576,10 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
             current_project_code = fmt_prj(master_project_code, prj_num)
 
             seen_projects_in_doc.append((current_project_code, None))
-            project_ben[current_project_code] = {"beneficiary_count": global_ben_count, "beneficiary_group_name": global_ben_group}
+            project_ben[current_project_code] = {
+                "beneficiary_count": global_ben_count,
+                "beneficiary_group_name": global_ben_group,
+            }
             project_amount_extracted_map[current_project_code] = None
             project_description_en_map[current_project_code] = None
             project_description_ar_map[current_project_code] = None
@@ -556,91 +590,135 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                 bc = project_ben.get(prj_code, {}).get("beneficiary_count") or global_ben_count
                 bg = project_ben.get(prj_code, {}).get("beneficiary_group_name") or global_ben_group
 
-                append_row({
-                    "document_id": document_id,
-                    "ts_inserted": TS_INSERTED,
-                    "index": index,
-                    "master_project_code": master_project_code,
-                    "master_project_title_en": master_project_title_en,
-                    "master_project_title_ar": master_project_title_ar,
-                    "master_project_amount_actual": master_project_amount_actual,
-                    "master_project_oda_amount": master_project_oda_amount,
-                    "master_project_ge_amount": master_project_ge_amount,
-                    "master_project_off_amount": master_project_off_amount,
-                    "project_code": prj_code,
-                    "project_title_en": prj_title,
-                    "project_title_ar": project_title_ar_map.get(prj_code),
-                    "project_description_en": project_description_en_map.get(prj_code),
-                    "project_description_ar": project_description_ar_map.get(prj_code),
-                    "beneficiary_count": bc,
-                    "beneficiary_group_name": bg,
-                    "asset": None,
-                    "asset_category": None,
-                    "asset_quantity": None,
-                    "asset_quantity_uom": None,
-                    "asset_capacity": None,
-                    "asset_capacity_uom": None,
-                    "item": None,
-                    "item_category": None,
-                    "item_quantity": None,
-                    "item_quantity_uom": None,
-                    "project_amount_extracted": project_amount_extracted_map.get(prj_code),
-                    "input_text": text,
-                })
+                append_row(
+                    {
+                        "document_id": document_id,
+                        "ts_inserted": TS_INSERTED,
+                        "index": index,
+                        "master_project_code": master_project_code,
+                        "master_project_title_en": master_project_title_en,
+                        "master_project_title_ar": master_project_title_ar,
+                        "master_project_amount_actual": master_project_amount_actual,
+                        "master_project_oda_amount": master_project_oda_amount,
+                        "master_project_ge_amount": master_project_ge_amount,
+                        "master_project_off_amount": master_project_off_amount,
+                        "project_code": prj_code,
+                        "project_title_en": prj_title,
+                        "project_title_ar": project_title_ar_map.get(prj_code),
+                        "project_description_en": project_description_en_map.get(prj_code),
+                        "project_description_ar": project_description_ar_map.get(prj_code),
+                        "beneficiary_count": bc,
+                        "beneficiary_group_name": bg,
+                        "asset": None,
+                        "asset_category": None,
+                        "asset_quantity": None,
+                        "asset_quantity_uom": None,
+                        "asset_capacity": None,
+                        "asset_capacity_uom": None,
+                        "item": None,
+                        "item_category": None,
+                        "item_quantity": None,
+                        "item_quantity_uom": None,
+                        "project_amount_extracted": project_amount_extracted_map.get(prj_code),
+                        "input_text": text,
+                    }
+                )
 
 # -----------------------
 # write output
 # -----------------------
-df = pd.DataFrame(rows)
+df_new = pd.DataFrame(rows)
+if df_new.empty:
+    print("[INFO] No rows produced for this run. Nothing to upsert.")
+    sys.exit(0)
 
-df["master_project_amount_actual"] = pd.to_numeric(df.get("master_project_amount_actual"), errors="coerce")
-df["master_project_oda_amount"] = pd.to_numeric(df.get("master_project_oda_amount"), errors="coerce")
-df["master_project_ge_amount"] = pd.to_numeric(df.get("master_project_ge_amount"), errors="coerce")
-df["master_project_off_amount"] = pd.to_numeric(df.get("master_project_off_amount"), errors="coerce")
-df["project_amount_extracted"] = pd.to_numeric(df.get("project_amount_extracted"), errors="coerce")
+df_new["master_project_amount_actual"] = pd.to_numeric(df_new.get("master_project_amount_actual"), errors="coerce")
+df_new["master_project_oda_amount"] = pd.to_numeric(df_new.get("master_project_oda_amount"), errors="coerce")
+df_new["master_project_ge_amount"] = pd.to_numeric(df_new.get("master_project_ge_amount"), errors="coerce")
+df_new["master_project_off_amount"] = pd.to_numeric(df_new.get("master_project_off_amount"), errors="coerce")
+df_new["project_amount_extracted"] = pd.to_numeric(df_new.get("project_amount_extracted"), errors="coerce")
 
 project_counts = (
-    df[["master_project_code", "project_code"]]
+    df_new[["master_project_code", "project_code"]]
     .drop_duplicates()
     .groupby("master_project_code")["project_code"]
     .nunique()
 )
-df["_project_count"] = df["master_project_code"].map(project_counts).fillna(1).astype(int)
+df_new["_project_count"] = df_new["master_project_code"].map(project_counts).fillna(1).astype(int)
 
-df["project_amount_actual"] = df["master_project_amount_actual"] / df["_project_count"]
-df["project_oda_amount"] = df["master_project_oda_amount"] / df["_project_count"]
-df["project_ge_amount"] = df["master_project_ge_amount"] / df["_project_count"]
-df["project_off_amount"] = df["master_project_off_amount"] / df["_project_count"]
+df_new["project_amount_actual"] = df_new["master_project_amount_actual"] / df_new["_project_count"]
+df_new["project_oda_amount"] = df_new["master_project_oda_amount"] / df_new["_project_count"]
+df_new["project_ge_amount"] = df_new["master_project_ge_amount"] / df_new["_project_count"]
+df_new["project_off_amount"] = df_new["master_project_off_amount"] / df_new["_project_count"]
 
-df.loc[df["master_project_amount_actual"].apply(is_missing_or_bad), "project_amount_actual"] = pd.NA
-df.loc[df["master_project_oda_amount"].apply(is_missing_or_bad), "project_oda_amount"] = pd.NA
-df.loc[df["master_project_ge_amount"].apply(is_missing_or_bad), "project_ge_amount"] = pd.NA
-df.loc[df["master_project_off_amount"].apply(is_missing_or_bad), "project_off_amount"] = pd.NA
+df_new.loc[df_new["master_project_amount_actual"].apply(is_missing_or_bad), "project_amount_actual"] = pd.NA
+df_new.loc[df_new["master_project_oda_amount"].apply(is_missing_or_bad), "project_oda_amount"] = pd.NA
+df_new.loc[df_new["master_project_ge_amount"].apply(is_missing_or_bad), "project_ge_amount"] = pd.NA
+df_new.loc[df_new["master_project_off_amount"].apply(is_missing_or_bad), "project_off_amount"] = pd.NA
 
-df.loc[df["asset"].notna(), "asset_quantity_uom"] = "Unit"
-df.drop(columns=["_project_count"], inplace=True)
+df_new.loc[df_new["asset"].notna(), "asset_quantity_uom"] = "Unit"
+df_new.drop(columns=["_project_count"], inplace=True)
 
 FINAL_COLUMNS = [
-    "document_id", "ts_inserted",
-    "index", "master_project_code", "master_project_title_en", "master_project_title_ar",
-    "project_code", "project_title_en", "project_title_ar",
-    "project_description_en", "project_description_ar",
-    "beneficiary_count", "beneficiary_group_name",
-    "asset", "asset_category", "asset_quantity", "asset_quantity_uom", "asset_capacity", "asset_capacity_uom",
-    "item", "item_category", "item_quantity", "item_quantity_uom",
+    "document_id",
+    "ts_inserted",
+    "index",
+    "master_project_code",
+    "master_project_title_en",
+    "master_project_title_ar",
+    "project_code",
+    "project_title_en",
+    "project_title_ar",
+    "project_description_en",
+    "project_description_ar",
+    "beneficiary_count",
+    "beneficiary_group_name",
+    "asset",
+    "asset_category",
+    "asset_quantity",
+    "asset_quantity_uom",
+    "asset_capacity",
+    "asset_capacity_uom",
+    "item",
+    "item_category",
+    "item_quantity",
+    "item_quantity_uom",
     "input_text",
-    "master_project_amount_actual", "master_project_oda_amount", "master_project_ge_amount", "master_project_off_amount",
-    "project_amount_actual", "project_amount_extracted",
-    "project_oda_amount", "project_ge_amount", "project_off_amount",
+    "master_project_amount_actual",
+    "master_project_oda_amount",
+    "master_project_ge_amount",
+    "master_project_off_amount",
+    "project_amount_actual",
+    "project_amount_extracted",
+    "project_oda_amount",
+    "project_ge_amount",
+    "project_off_amount",
 ]
 
 for c in FINAL_COLUMNS:
-    if c not in df.columns:
-        df[c] = None
-df = df[FINAL_COLUMNS]
+    if c not in df_new.columns:
+        df_new[c] = None
+df_new = df_new[FINAL_COLUMNS]
 
 OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
-df.to_csv(OUT_CSV, index=False)
+
+# CSV incremental upsert:
+# - If OUT_CSV exists: remove rows for processed indexes, then append df_new
+# - Else: write df_new
+df_new["index"] = df_new["index"].astype(str)
+
+if OUT_CSV.exists():
+    old_df = pd.read_csv(OUT_CSV, dtype={"index": str})
+    old_df["index"] = old_df["index"].astype(str)
+    old_df = old_df[~old_df["index"].isin(processed_run_indexes)]
+    df_final = pd.concat([old_df, df_new], ignore_index=True)
+else:
+    df_final = df_new
+
+df_final.to_csv(OUT_CSV, index=False)
+
+# For SQL: ONLY upsert newly-processed indexes (delete+insert those indexes)
+indexes_to_upsert = sorted(set(df_new["index"].dropna().astype(str)) & processed_run_indexes)
 
 dtype = {
     "master_project_title_ar": NVARCHAR(length=4000),
@@ -650,62 +728,50 @@ dtype = {
     "document_id": NVARCHAR(length=128),
 }
 
-# -----------------------
-# FAST DB upsert by index using temp table + join delete
-# -----------------------
-indexes_to_upsert = df["index"].dropna().astype(str).unique().tolist()
-
 if indexes_to_upsert:
-    print(f"[INFO] Upserting {len(indexes_to_upsert)} indexes into {TARGET_SCHEMA}.{TARGET_TABLE} (temp table delete-join)")
+    print(
+        f"[INFO] Upserting {len(indexes_to_upsert)} indexes into {TARGET_SCHEMA}.{TARGET_TABLE} "
+        f"(temp table delete-join)"
+    )
 
     df_idx = pd.DataFrame({"index": indexes_to_upsert})
 
     with engine.begin() as conn:
-        # 0) Ensure perf index exists (create once; safe if already exists)
-        conn.execute(sql_text(f"""
-           IF NOT EXISTS (
-                SELECT 1
-                FROM sys.indexes
-                WHERE name = N'IX_MasterTable_extracted_index'
-                  AND object_id = OBJECT_ID(N'[silver].[MasterTable_extracted]')
-            )
-            BEGIN
-                SELECT 1;
-            END;
-        """))
-
-        # 1) Create temp table
         conn.execute(sql_text("IF OBJECT_ID('tempdb..#idx') IS NOT NULL DROP TABLE #idx;"))
         conn.execute(sql_text("CREATE TABLE #idx ([index] NVARCHAR(255) NOT NULL PRIMARY KEY);"))
 
-        # 2) Bulk insert indexes into temp table
+        # Bulk insert indexes into temp table
         df_idx.to_sql("#idx", conn, if_exists="append", index=False, method=None)
 
-        # 3) Single delete join
-        conn.execute(sql_text(f"""
-            DELETE T
-            FROM silver.MasterTable_extracted AS T
-            INNER JOIN #idx AS I
-                ON CAST(T.[index] AS NVARCHAR(255)) COLLATE DATABASE_DEFAULT
-                 = I.[index] COLLATE DATABASE_DEFAULT;
-        """))
+        # Delete existing rows for those indexes
+        conn.execute(
+            sql_text(
+                f"""
+                DELETE T
+                FROM {TARGET_SCHEMA}.{TARGET_TABLE} AS T
+                INNER JOIN #idx AS I
+                    ON CAST(T.[index] AS NVARCHAR(255)) COLLATE DATABASE_DEFAULT
+                     = I.[index] COLLATE DATABASE_DEFAULT;
+            """
+            )
+        )
 
-# 4) Bulk insert final df (fast_executemany already enabled)
-df.to_sql(
-    TARGET_TABLE,
-    engine,
-    schema=TARGET_SCHEMA,
-    if_exists="append",
-    index=False,
-    chunksize=2000,
-    dtype=dtype,
-    method=None
-)
+    # Insert ONLY the newly produced rows (not the whole CSV)
+    df_new.to_sql(
+        TARGET_TABLE,
+        engine,
+        schema=TARGET_SCHEMA,
+        if_exists="append",
+        index=False,
+        chunksize=2000,
+        dtype=dtype,
+        method=None,
+    )
 
 print(f"Saved combined output: {OUT_CSV}")
 print(f"Saved to SQL Server: {TARGET_SCHEMA}.{TARGET_TABLE}")
-print("Rows written:", len(df))
-print("Non-null counts:\n", df.notna().sum())
+print("Rows written (this run):", len(df_new))
+print("Non-null counts (this run):\n", df_new.notna().sum())
 
 with engine.begin() as conn:
     for q in QUERIES:
