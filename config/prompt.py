@@ -54,6 +54,12 @@ DESC_AR: <Arabic Project Description>
 - Either language MAY be missing.
 - Treat English and Arabic as two references describing the SAME project(s).
 
+LABEL-ONLY NOISE (ABSOLUTE):
+- The strings TITLE_EN:, DESC_EN:, TITLE_AR:, DESC_AR: are labels, not content.
+- If a label appears with no meaningful text after it, it is noise.
+- NEVER output extraction_text values that are labels or label bundles, e.g. "TITLE_AR:", "DESC_AR:", "TITLE_AR: DESC_AR:", "TITLE_EN: DESC_EN:".
+- If only label-only noise is available, treat the field as missing and use fallback from meaningful content only.
+
 ==================================================
 BILINGUAL CANONICALIZATION RULES (CRITICAL):
 ==================================================
@@ -284,6 +290,13 @@ Capacity extraction rules:
     - "extraction_text": string or number (never null, never list/dict)
     - "extraction_index": integer (order in which you found it; start at 0 and increment)
 
+    FINAL VALIDATION (MANDATORY):
+    Before returning JSON:
+    1) Remove any extraction whose extraction_text is label-only noise.
+    2) Ensure singleton fields master_project_title_en and master_project_title_ar appear EXACTLY ONCE.
+       If duplicates exist, keep the best non-noise candidate and delete the rest.
+    3) Re-number extraction_index starting at 0 in increasing order.
+    
 9) MANDATORY FALLBACK RULE (critical):
 
 - master_project_title_en and project_title_en MUST ALWAYS be present.
