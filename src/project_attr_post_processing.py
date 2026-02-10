@@ -107,6 +107,8 @@ SELECT
     , mtcl.groupNameEnglish             AS cluster_en
     , acat.AssistanceCategoryEnglish    AS extracted_assistance_category_en
     , mt.AssistanceCategoryEnglish      AS assistance_category_en
+    , mt.IndicatorEnglish               AS extracted_indicator_en
+    , mt.IndicatorEnglish               AS indicator_en
     , pa.target_en                      AS extracted_target_en
     , mt.Target_English                 AS target_en
     , g.NameEnglish                     AS extracted_goal_en
