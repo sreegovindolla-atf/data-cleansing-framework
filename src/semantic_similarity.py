@@ -207,10 +207,19 @@ df_out = pd.DataFrame(out_rows)
 # De-duplicate symmetric pairs (A-B == B-A)
 # -----------------------------
 # canonical ordering of the pair
-df_out["pair_left"]  = np.minimum(df_out["index"].astype(str), df_out["similar_index"].astype(str))
-df_out["pair_right"] = np.maximum(df_out["index"].astype(str), df_out["similar_index"].astype(str))
+# -----------------------------
+if SOURCE_MODE == "master projects":
+    left_col, right_col = "index", "similar_index"
+elif SOURCE_MODE == "projects":
+    left_col, right_col = "project_code", "similar_project_code"
+else:
+    raise ValueError(f"Unknown SOURCE_MODE: {SOURCE_MODE}")
 
-# keep best row per pair (e.g., highest similarity_score)
+# Canonical ordering to remove symmetric duplicates
+df_out["pair_left"]  = np.minimum(df_out[left_col].astype(str), df_out[right_col].astype(str))
+df_out["pair_right"] = np.maximum(df_out[left_col].astype(str), df_out[right_col].astype(str))
+
+# Keep best row per pair (highest similarity_score)
 df_out = (
     df_out.sort_values(["pair_left", "pair_right", "similarity_score"], ascending=[True, True, False])
          .drop_duplicates(subset=["pair_left", "pair_right"], keep="first")
@@ -218,7 +227,7 @@ df_out = (
          .reset_index(drop=True)
 )
 
-print(f"[DEDUP] Rows after symmetric de-dup: {len(df_out):,}")
+print(f"[DEDUP] Rows after symmetric de-dup (mode={SOURCE_MODE}, key={left_col}/{right_col}): {len(df_out):,}")
 
 # -----------------------------
 # % difference between amounts
