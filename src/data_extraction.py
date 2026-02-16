@@ -90,10 +90,7 @@ SOURCE_QUERY = """
 SELECT *
 FROM dbo.MasterTableDenormalizedCleanedFinal
 WHERE
-[index] = 'DACRE-2019-006' or
-[index] = 'DACRE-2019-046' or
-[index] = 'DACRE-2019-068' or
-[index] = 'DACRE-2019-114'
+[index] = 'SCA-2024-0028'
 """
 df_input = pd.read_sql(SOURCE_QUERY, engine)
 
@@ -112,7 +109,6 @@ fresh_calls = 0
 processed_this_run_indexes = set()
 
 for i, row in enumerate(df_input.to_dict("records"), start=1):
-    # ---- robust index read (SQL column is [index], pandas may preserve as 'index')
     index = row.get("index", None) or row.get("Index", None)
     index = safe_str(index)
 
@@ -215,6 +211,7 @@ for i, row in enumerate(df_input.to_dict("records"), start=1):
 
 # final save
 jsonl_to_json_snapshot(OUT_JSONL, OUT_JSON)
+
 save_cache(cache, CACHE_PKL)
 
 print(f"Saved extraction JSONL: {OUT_JSONL}")

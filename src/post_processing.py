@@ -8,7 +8,7 @@ import urllib
 import sys
 from datetime import datetime, timezone
 from sqlalchemy import text as sql_text
-from sqlalchemy.types import NVARCHAR, DateTime
+from sqlalchemy.types import NVARCHAR, DateTime, UnicodeText
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -191,11 +191,17 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
 
         master_project_title_en = None
         master_project_title_ar = None
+        master_project_description_en = None
+        master_project_description_ar = None
         for x in exs:
             if x["cls"] == "master_project_title_en" and master_project_title_en is None:
                 master_project_title_en = smart_title_case(x["val"])
             elif x["cls"] == "master_project_title_ar" and master_project_title_ar is None:
                 master_project_title_ar = str(x["val"]).strip()
+            elif x["cls"] == "master_project_description_en" and master_project_description_en is None:
+                master_project_description_en = str(x["val"]).strip()
+            elif x["cls"] == "master_project_description_ar" and master_project_description_ar is None:
+                master_project_description_ar = str(x["val"]).strip()
 
         # Reuse master_project_code if exists; otherwise generate NEW
         if index_key in index_to_master_code:
@@ -409,6 +415,8 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                     "master_project_code": master_project_code,
                     "master_project_title_en": master_project_title_en,
                     "master_project_title_ar": master_project_title_ar,
+                    "master_project_description_en": master_project_description_en,
+                    "master_project_description_ar": master_project_description_ar,
                     "master_project_amount_actual": master_project_amount_actual,
                     "master_project_oda_amount": master_project_oda_amount,
                     "master_project_ge_amount": master_project_ge_amount,
@@ -464,6 +472,8 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                     "master_project_code": master_project_code,
                     "master_project_title_en": master_project_title_en,
                     "master_project_title_ar": master_project_title_ar,
+                    "master_project_description_en": master_project_description_en,
+                    "master_project_description_ar": master_project_description_ar,
                     "master_project_amount_actual": master_project_amount_actual,
                     "master_project_oda_amount": master_project_oda_amount,
                     "master_project_ge_amount": master_project_ge_amount,
@@ -598,6 +608,8 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                         "master_project_code": master_project_code,
                         "master_project_title_en": master_project_title_en,
                         "master_project_title_ar": master_project_title_ar,
+                        "master_project_description_en": master_project_description_en,
+                        "master_project_description_ar": master_project_description_ar,
                         "master_project_amount_actual": master_project_amount_actual,
                         "master_project_oda_amount": master_project_oda_amount,
                         "master_project_ge_amount": master_project_ge_amount,
@@ -666,6 +678,8 @@ FINAL_COLUMNS = [
     "master_project_code",
     "master_project_title_en",
     "master_project_title_ar",
+    "master_project_description_en",
+    "master_project_description_ar",
     "project_code",
     "project_title_en",
     "project_title_ar",
@@ -721,9 +735,14 @@ df_final.to_csv(OUT_CSV, index=False)
 indexes_to_upsert = sorted(set(df_new["index"].dropna().astype(str)) & processed_run_indexes)
 
 dtype = {
-    "master_project_title_ar": NVARCHAR(length=4000),
-    "project_title_ar": NVARCHAR(length=4000),
-    "project_description_ar": NVARCHAR(length=None),
+    "master_project_title_en": UnicodeText(),
+    "master_project_description_en": UnicodeText(),
+    "project_title_en": UnicodeText(),
+    "project_description_en": UnicodeText(),
+    "master_project_title_ar": UnicodeText(),
+    "master_project_description_ar": UnicodeText(),
+    "project_title_ar": UnicodeText(),
+    "project_description_ar": UnicodeText(),
     "ts_inserted": DateTime(),
     "document_id": NVARCHAR(length=128),
 }
