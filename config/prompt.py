@@ -6,7 +6,9 @@ Extract the following fields as labeled spans from the input text.
 
 Single per document:
 - master_project_title_en
+- master_project_description_en
 - master_project_title_ar
+- master_project_description_ar
 
 Repeatable (one per project OR master-level when applicable):
 - project_title_en
@@ -32,7 +34,9 @@ Repeatable (can repeat multiple times per project):
 
 Mandatory fields:
 - master_project_title_en
+- master_project_description_en
 - master_project_title_ar
+- master_project_description_ar
 - project_title_en
 - project_title_ar
 - project_description_en
@@ -65,8 +69,8 @@ BILINGUAL CANONICALIZATION RULES (CRITICAL):
 ==================================================
 
 You must produce TWO aligned outputs for titles/descriptions:
-- English fields: master_project_title_en, project_title_en, project_description_en
-- Arabic fields:  master_project_title_ar, project_title_ar, project_description_ar
+- English fields: master_project_title_en, master_project_description_en, project_title_en, project_description_en
+- Arabic fields:  master_project_title_ar, master_project_description_ar, project_title_ar, project_description_ar
 
 1) One meaning, two languages:
 - English and Arabic outputs MUST represent the SAME meaning and scope.
@@ -90,8 +94,8 @@ You must produce TWO aligned outputs for titles/descriptions:
 - If missing in AR but present in EN, extract them using the English evidence.
 
 5) Script purity (strict):
-- master_project_title_en / project_title_en / project_description_en MUST be English only.
-- master_project_title_ar / project_title_ar / project_description_ar MUST be Arabic only.
+- master_project_title_en / master_project_description_en / project_title_en / project_description_en MUST be English only.
+- master_project_title_ar / master_project_description_ar / project_title_ar / project_description_ar MUST be Arabic only.
 - Never mix Arabic and English words in the same extracted field.
 
 6) Translation fallback (mandatory):
@@ -277,25 +281,68 @@ Capacity extraction rules:
      then extract each item as its own asset (with quantities/uom if present).
 
 8) Output format:
+- Output must be in the following format:
+{
+  "extractions": [
+    { "extraction_class": "master_project_title_en",        "extraction_text": "<string>" },
+    { "extraction_class": "master_project_description_en",  "extraction_text": "<string>" },
+    { "extraction_class": "master_project_title_ar",        "extraction_text": "<string>" },
+    { "extraction_class": "master_project_description_ar",  "extraction_text": "<string>" },
+
+    { "extraction_class": "project_title_en",               "extraction_text": "<string>" },
+    { "extraction_class": "project_description_en",         "extraction_text": "<string>" },
+    { "extraction_class": "project_title_ar",               "extraction_text": "<string>" },
+    { "extraction_class": "project_description_ar",         "extraction_text": "<number_or_string>" },
+    { "extraction_class": "beneficiary_count",              "extraction_text": "<string>" },
+    { "extraction_class": "beneficiary_group_name",         "extraction_text": "<string>" },
+    { "extraction_class": "asset",                          "extraction_text": "<string>" },
+    { "extraction_class": "asset_category",                 "extraction_text": "<string>" },
+    { "extraction_class": "asset_quantity",                 "extraction_text": "<number_or_string>" },
+    { "extraction_class": "asset_capacity",                 "extraction_text": "<number_or_string>" },
+    { "extraction_class": "asset_capacity_uom",             "extraction_text": "<string>" },
+    { "extraction_class": "item",                           "extraction_text": "<string>" },
+    { "extraction_class": "item_category",                  "extraction_text": "<string>" },
+    { "extraction_class": "item_quantity",                  "extraction_text": "<string>" },
+    { "extraction_class": "item_quantity_uom",              "extraction_text": "<string>" },
+
+    { "extraction_class": "project_title_en",               "extraction_text": "<string>" },
+    { "extraction_class": "project_description_en",         "extraction_text": "<string>" },
+    { "extraction_class": "project_title_ar",               "extraction_text": "<string>" },
+    { "extraction_class": "project_description_ar",         "extraction_text": "<number_or_string>" },
+    { "extraction_class": "beneficiary_count",              "extraction_text": "<string>" },
+    { "extraction_class": "beneficiary_group_name",         "extraction_text": "<string>" },
+    { "extraction_class": "asset",                          "extraction_text": "<string>" },
+    { "extraction_class": "asset_category",                 "extraction_text": "<string>" },
+    { "extraction_class": "asset_quantity",                 "extraction_text": "<number_or_string>" },
+    { "extraction_class": "asset_capacity",                 "extraction_text": "<number_or_string>" },
+    { "extraction_class": "asset_capacity_uom",             "extraction_text": "<string>" },
+    { "extraction_class": "asset",                          "extraction_text": "<string>" },
+    { "extraction_class": "asset_category",                 "extraction_text": "<string>" },
+    { "extraction_class": "asset_quantity",                 "extraction_text": "<number_or_string>" },
+    { "extraction_class": "asset_capacity",                 "extraction_text": "<number_or_string>" },
+    { "extraction_class": "asset_capacity_uom",             "extraction_text": "<string>" }
+  ],
+  "text": <string>,
+  "index": <string>,
+  "master_project_amount_actual": <float>,
+  "master_project_oda_amount": <float>,
+  "master_project_ge_amount": <float>,
+  "master_project_off_amount": <float>,
+  "document_id": <string>
+}
    - extraction_text MUST be a string, integer, or float (never null, never a list/dict).
-   - If a field is not explicitly present, DO NOT output an extraction for it EXCEPT mandatory fields (master_project_title_en, project_title_en), which must always be produced using fallback rules.
+   - If a field is not explicitly present, DO NOT output an extraction for it EXCEPT mandatory fields (master_project_title_en, master_project_title_ar, master_project_description_en, master_project_description_ar, project_title_en, project_title_ar, project_description_en, project_description_ar), which must always be produced using fallback rules.
    - Do not use attributes for now (leave attributes empty).
     - Return ONLY valid JSON (no markdown, no commentary).
     - The top-level JSON MUST have exactly these keys:
       - "text": the original input text (string)
       - "extractions": a list of objects
 
-    Each item in "extractions" MUST be an object with:
-    - "extraction_class": string
-    - "extraction_text": string or number (never null, never list/dict)
-    - "extraction_index": integer (order in which you found it; start at 0 and increment)
-
     FINAL VALIDATION (MANDATORY):
     Before returning JSON:
     1) Remove any extraction whose extraction_text is label-only noise.
-    2) Ensure singleton fields master_project_title_en and master_project_title_ar appear EXACTLY ONCE.
+    2) Ensure singleton fields master_project_title_en, master_project_title_ar, master_project_description_en, master_project_description_ar appear EXACTLY ONCE.
        If duplicates exist, keep the best non-noise candidate and delete the rest.
-    3) Re-number extraction_index starting at 0 in increasing order.
     
 9) MANDATORY FALLBACK RULE (critical):
 
