@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 import argparse
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from config.config import COMPUTE_EMB_CONFIG as CONFIG
+from config.app_config import COMPUTE_EMB_CONFIG as CONFIG
 
 # =========================================================
 # Args
