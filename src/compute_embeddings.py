@@ -8,20 +8,40 @@ import urllib
 import sys
 from sqlalchemy.types import NVARCHAR, UnicodeText, DateTime
 from datetime import datetime, timezone
-
+import argparse
+import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from config.config import COMPUTE_EMB_CONFIG as CONFIG
+
+# =========================================================
+# Args
+# =========================================================
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "--source-mode",
+    required=True,
+    choices=["master projects", "projects"],
+    help="db = compute embeddings from the master projects table; extracted = compute embeddings from the projects table"
+)
+
+args = parser.parse_args()
+
+SOURCE_MODE = args.source_mode
 
 # -----------------------------
 # Config
 # -----------------------------
 MODEL_NAME = "all-MiniLM-L6-v2"
 TARGET_SCHEMA = "silver"
-TARGET_TABLE = "project_embeddings"
 #DAR_TARGET_TABLE = "dar_project_embeddings"
 
-# Text columns used to build embedding
-TEXT_COLS = ["master_project_title_en", "master_project_description_en", "master_project_title_ar", "master_project_description_ar"]
-TABLE = "silver.cleaned_master_project"
+
+MODE_CFG = CONFIG[SOURCE_MODE]
+TARGET_TABLE = MODE_CFG["target_table"]
+SOURCE_SQL = MODE_CFG["source_sql"]
+TEXT_COLS = MODE_CFG["text_cols"]
+OUTPUT_COLS = MODE_CFG["output_cols"]
+
 
 # =====================================
 # helpers
@@ -55,23 +75,8 @@ engine = get_sql_server_engine()
 # -----------------------------
 # Read from SQL Server
 # -----------------------------
-sql = f"""
-SELECT DISTINCT
-    a.[index]
-    , a.master_project_title_en
-    , b.DescriptionEnglish              AS master_project_description_en      
-    , a.master_project_title_ar         
-    , b.DescriptionArabic               AS master_project_description_ar 
-FROM {TABLE} a
-LEFT JOIN dbo.MasterTableDenormalizedCleanedFinal b
-    ON a.[index] = b.[index]
-WHERE 1=1
-AND a.[index] NOT LIKE '%ADFD-%'
---Dar Al Ber
---AND b.DonorID = 30
-"""
 
-df_src = pd.read_sql_query(text(sql), engine).fillna("").reset_index(drop=True)
+df_src = pd.read_sql_query(text(SOURCE_SQL), engine).fillna("").reset_index(drop=True)
 
 # -----------------------------
 # Build texts + REMOVE empty ones (critical)
@@ -100,23 +105,37 @@ if len(base_embeddings) != len(df_src):
 # Build output dataframe (NO iloc loop needed)
 # -----------------------------
 #df_out = df_src[["index", "project_code", "project_title_en", "project_description_en", "project_title_ar", "project_description_ar"]].copy()
-df_out = df_src[["index", "master_project_title_en", "master_project_description_en", "master_project_title_ar", "master_project_description_ar"]].copy()
+df_out = df_src[OUTPUT_COLS].copy()
 df_out["embedding"] = [json.dumps(e.tolist()) for e in base_embeddings]
 df_out["ts_inserted"] = datetime.now(timezone.utc)
 
 # -----------------------------
 # Save to CSV
 # -----------------------------
-RUN_OUTPUT_DIR = Path("data/outputs/embeddings")
-RUN_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-OUT_CSV = RUN_OUTPUT_DIR / "project_embeddings.csv"
-df_out.to_csv(OUT_CSV, index=False)
-print(f"Saved {OUT_CSV}")
+csv_dir = Path("data/outputs/embeddings")
+csv_dir.mkdir(parents=True, exist_ok=True)
+out_csv = csv_dir / MODE_CFG["out_csv_name"]
+df_out.to_csv(out_csv, index=False)
+print(f"Saved {out_csv}")
 
 # -----------------------------
 # Write embeddings to SQL Server
 # -----------------------------
+dtype_map = {}
+for c in OUTPUT_COLS:
+    if c.lower() == "index":
+        dtype_map[c] = NVARCHAR(255)
+    elif c.endswith("_en") or c.endswith("_ar") or "description" in c.lower() or "title" in c.lower():
+        dtype_map[c] = UnicodeText()
+    else:
+        dtype_map[c] = NVARCHAR(255)
+
+dtype_map.update({
+    "embedding": UnicodeText(),
+    "ts_inserted": DateTime(),
+    "source_mode": NVARCHAR(50),
+    "model_name": NVARCHAR(255),
+})
 
 df_out.to_sql(
     name=TARGET_TABLE,
@@ -126,16 +145,7 @@ df_out.to_sql(
     index=False,
     chunksize=200,
     method=None,
-    dtype={
-        "index": NVARCHAR(255),
-        #"project_code": NVARCHAR(255),
-        "master_project_title_en": UnicodeText(),        # NVARCHAR(MAX)
-        "master_project_description_en": UnicodeText(),  # NVARCHAR(MAX)
-        "master_project_title_ar": UnicodeText(),        # NVARCHAR(MAX)
-        "master_project_description_ar": UnicodeText(),  # NVARCHAR(MAX)
-        "embedding": UnicodeText(),               # NVARCHAR(MAX) 
-        "ts_inserted": DateTime(),       # or DateTime(timezone=True)
-    }
+    dtype=dtype_map
 )
 
-print(f"Saved to SQL Server: {TARGET_SCHEMA}.{TARGET_TABLE}")
+print(f"Saved to SQL Server: {TARGET_SCHEMA}.{TARGET_TABLE} (mode={SOURCE_MODE})")
