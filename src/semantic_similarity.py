@@ -23,24 +23,60 @@ parser.add_argument(
     choices=["master projects", "projects"],
     help="db = use embeddings from the master projects table; extracted = use embeddings from the projects table"
 )
+# Histogram flag (default False)
+parser.add_argument(
+    "--histogram",
+    action="store_true",
+    help="If set, uses a lower similarity threshold (0.5) and writes to histogram target table"
+)
 
 args = parser.parse_args()
 
 SOURCE_MODE = args.source_mode
+HISTOGRAM_MODE = bool(args.histogram)
 
 # -----------------------------
 # Config
 # -----------------------------
+# Default similarity configurations
 TOP_K = 20
-SIMILARITY_THRESHOLD = 0.75
+DEFAULT_SIMILARITY_THRESHOLD = 0.75
+HISTOGRAM_THRESHOLD = 0.5
 
-TARGET_SCHEMA = "silver"
+# Target Schema
+DEAFULT_TARGET_SCHEMA = "silver"
+HISTOGRAM_TARGET_SCHEMA = "histogram"
+
+# Mode dependent configurations
 MODE_CFG = CONFIG[SOURCE_MODE]
 
+# Embedding table
 EMB_TABLE   = MODE_CFG["emb_table"]
-TARGET_TABLE   = MODE_CFG["target_table"]
+
+# Target tables
+DEFAULT_TARGET_TABLE = MODE_CFG["target_table"]
+HISTOGRAM_TARGET_TABLE   = MODE_CFG["histogram_target_table"]
+
+# Source SQL query
 SOURCE_SQL = MODE_CFG["source_sql"]
+
+# ADFD similar projects insert SQL query
 INSERT_ADFD_SQL = MODE_CFG["insert_adfd_sql"]
+
+# Switch behavior if histogram mode is on
+if HISTOGRAM_MODE:
+    SIMILARITY_THRESHOLD = HISTOGRAM_THRESHOLD
+    TARGET_TABLE = HISTOGRAM_TARGET_TABLE
+    TARGET_SCHEMA = HISTOGRAM_TARGET_SCHEMA
+else:
+    SIMILARITY_THRESHOLD = DEFAULT_SIMILARITY_THRESHOLD  # 0.75
+    TARGET_TABLE = DEFAULT_TARGET_TABLE
+    TARGET_SCHEMA = DEFAULT_TARGET_SCHEMA
+
+print(
+    f"[MODE] source_mode={SOURCE_MODE} | histogram={HISTOGRAM_MODE} "
+    f"| threshold={SIMILARITY_THRESHOLD} | target={TARGET_SCHEMA}.{TARGET_TABLE}"
+)
 
 FILTER_COLS = ["country_name_en", "donor_name_en", "implementing_org_en"]
 SEASONAL_SUBSECTOR = "Seasonal programmes"
@@ -158,7 +194,7 @@ def run_grouped_faiss(df_slice: pd.DataFrame, group_cols: list[str]):
                     "similar_subsector_name_en": sim["subsector_name_en"],
                     "similar_amount": sim["amount"],
 
-                    "similarity_score": round(s, 4),
+                    "similarity_score": round(s, 2),
                     "ts_inserted": ts_inserted,
                 }
 

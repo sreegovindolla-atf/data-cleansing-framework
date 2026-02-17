@@ -2,6 +2,7 @@ SEMANTIC_SIMILARITY_CONFIG = {
     "master projects": {
         "emb_table": "silver.master_project_embeddings",
         "target_table":  "similar_master_projects",
+        "histogram_target_table":  "similar_master_projects",
         "source_sql": """
         SELECT
             a.[index]
@@ -137,6 +138,7 @@ SEMANTIC_SIMILARITY_CONFIG = {
     "projects": {
         "emb_table": "silver.project_embeddings",
         "target_table":  "similar_projects",
+        "histogram_target_table":  "similar_projects",
         "source_sql": """
         SELECT
             a.[index]
