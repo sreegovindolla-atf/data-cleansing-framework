@@ -4,22 +4,25 @@ from typing import List
 PROMPT = textwrap.dedent("""\
 Extract the following fields as labeled spans from the input text.
 
-Single per document:
-- master_project_title_en
-- master_project_description_en
-- master_project_title_ar
-- master_project_description_ar
+Single per document (Master project fields):
+- The following combination of columns indicate one master project. These fields must NOT repeat more than once per document.
+  - master_project_title_en
+  - master_project_description_en
+  - master_project_title_ar
+  - master_project_description_ar
 
-Repeatable (one per project OR master-level when applicable):
-- project_title_en
-- project_title_ar
-- project_description_en
-- project_description_ar
-- beneficiary_count
-- beneficiary_group_name
-- project_amount_extracted
+Repeatable (Project fields):
+- The following combination of columns indicate one project. One master project can have one or more projects.
+  - project_title_en
+  - project_title_ar
+  - project_description_en
+  - project_description_ar
+  - beneficiary_count
+  - beneficiary_group_name
+  - project_amount_extracted
 
-Repeatable (can repeat multiple times per project):
+Repeatable (Project Asset/Item fields):
+- The following combination of columns indicate one asset/item for a project. One project can have one or more assets/items.
   Assets (physical constructions or major deliverables):
   - asset
   - asset_category
@@ -41,6 +44,11 @@ Mandatory fields:
 - project_title_ar
 - project_description_en
 - project_description_ar
+
+Order of extraction: Extract the fields in the following order
+  - Master Project fields
+  - Project fields
+  - Project Asset/Item fields
 
 ==================================================
 INPUT STRUCTURE (CRITICAL – READ CAREFULLY):
@@ -69,18 +77,18 @@ BILINGUAL CANONICALIZATION RULES (CRITICAL):
 ==================================================
 
 You must produce TWO aligned outputs for titles/descriptions:
-- English fields: master_project_title_en, master_project_description_en, project_title_en, project_description_en
+- English fields: master_project_title_en, master_project_description_en, project_title_en, project_description_en,
+                  beneficiary_group_name, asset, asset_category, asset_quantity_uom, asset_capacity_uom, item, item_category,
+                  item_quantity_uom
 - Arabic fields:  master_project_title_ar, master_project_description_ar, project_title_ar, project_description_ar
+- English fields must be in English only and Arabic fields must be in Arabic only.
+- Never mix Arabic and English words in the same extracted field.
 
 1) One meaning, two languages:
 - English and Arabic outputs MUST represent the SAME meaning and scope.
 - Do NOT output different project meanings across languages.
 
-2) Consistency:
-- If EN and AR agree, keep both aligned.
-- Do NOT duplicate extractions per language beyond the *_ar fields.
-
-3) Conflict resolution (important):
+2) Conflict resolution (important):
 - If EN and AR conflict:
   - Prefer the version that is MORE specific, complete, and contextually correct.
   - Use that as the canonical meaning.
@@ -88,24 +96,19 @@ You must produce TWO aligned outputs for titles/descriptions:
     - English fields in English
     - Arabic fields in Arabic (translate/paraphrase as needed)
 
-4) Completeness:
+3) Completeness:
 - If attributes (asset/item/beneficiary/capacity/quantities/etc.) are missing in EN but present in AR,
   extract them using the Arabic evidence.
 - If missing in AR but present in EN, extract them using the English evidence.
 
-5) Script purity (strict):
-- master_project_title_en / master_project_description_en / project_title_en / project_description_en MUST be English only.
-- master_project_title_ar / master_project_description_ar / project_title_ar / project_description_ar MUST be Arabic only.
-- Never mix Arabic and English words in the same extracted field.
-
-6) Translation fallback (mandatory):
+4) Translation fallback (mandatory):
 - If Arabic title/description is missing but English is present:
   - Still output the *_ar fields by translating the canonical meaning to Arabic.
 - If English title/description is missing but Arabic is present:
   - Still output the English fields by translating the canonical meaning to English.
 
-7) ARABIC FIELDS MUST BE PURE ARABIC (STRICT, NO EXCEPTIONS):
-- master_project_title_ar, project_title_ar, project_description_ar MUST contain ONLY Arabic script.
+5) ARABIC FIELDS MUST BE PURE ARABIC (STRICT, NO EXCEPTIONS):
+- master_project_title_ar, master_project_description_ar, project_title_ar, project_description_ar MUST contain ONLY Arabic script.
 - They MUST NOT contain any Latin letters (A-Z), numbers in Latin formatting, or Latin abbreviations.
 - If the source contains Latin brand names (e.g., "Sunshow"), you MUST transliterate them into Arabic letters.
   Example: Sunshow -> سانشو (or سَنشو)
@@ -122,25 +125,25 @@ CRITICAL RULES:
 ==================================================
 
 1) Project Splitting Rules (very important):
-- The input text may describe ONE master project that contains MULTIPLE sub-projects.
+- The input text may describe ONE master project that contains MULTIPLE projects.
 
-- Treat master_project_title_en as the overall umbrella/theme.
+- Treat Master Project fields as the overall umbrella/theme.
 
-- Extract one project_title_en for EACH distinct sub-project ONLY when the text clearly describes multiple independent actions or initiatives that could reasonably be tracked, funded, or implemented separately.
+- Extract one set of Project fields for EACH distinct project ONLY when the text clearly describes multiple independent actions or initiatives that could reasonably be tracked, funded, or implemented separately.
 
 - Financial disambiguation rule (important):
-    - When a master project description lists multiple actions AND explicitly mentions separate monetary amounts, use the number of distinct monetary amounts as a strong signal for how many project_title_en entries to extract.
-    - If two distinct amounts are clearly associated with two different actions, extract two project_title_en entries.
-    - Do NOT create additional project_title_en entries for actions that do not have their own explicit amount; instead, group such actions with the most relevant amount-bearing project or keep them under the master scope.
+    - When a master project description lists multiple actions AND explicitly mentions separate monetary amounts, use the number of distinct monetary amounts as a strong signal for how many sets of Project fields to extract.
+    - If two distinct amounts are clearly associated with two different actions, extract two sets of Project fields.
+    - Do NOT create additional set of Project fields for actions that do not have their own explicit amount; instead, group such actions with the most relevant amount-bearing project or keep them under the master scope.
 
-- Split the master project into multiple project_title_en entries ONLY when:
+- Split the Master Project into multiple Projects ONLY when:
   - The text describes separate actions applied to different targets or entities
     (e.g., different buildings, locations, beneficiary groups, or deliverables), OR
   - The text enumerates multiple activities that are conceptually independent
     (i.e., removing one activity would still leave a complete and meaningful project).
 
 - NON-SPLIT RULE (IMPORTANT):
-- Do NOT create multiple project_title_en entries when:
+- Do NOT create multiple Projects when:
   - Multiple words or verbs describe a single continuous scope of work,
   - Multiple components together form one unified intervention,
   - Multiple actions are tightly coupled and jointly describe how one project is executed.
@@ -152,16 +155,14 @@ CRITICAL RULES:
   (e.g., different tank capacities like 2000 liters and 500 gallons) unless the text explicitly
   states they are separate projects, separate implementations, or separate budgets.
 
-- Text after "; Description:" MAY be used to extract
-  master_project_title_en and project_title_en if it provides clearer meaning.
-
+- Text after "; Description:" MAY be used to extract titles of Master Project and Project if it provides clearer meaning.
 - HOWEVER:
-  - master_project_title_en and project_title_en MUST NOT include
+  - Master Project and Project titles MUST NOT include
     the literal string "Description:" or the delimiter "; Description:".
   - When using description text for titles, extract ONLY the meaningful
     content and REMOVE the label completely.
 
-- When in doubt, prefer fewer project_title_en entries rather than over-splitting.
+- When in doubt, prefer fewer Projects rather than over-splitting.
 
 2) Asset Rules:
 - What qualifies as an asset:
@@ -179,27 +180,14 @@ CRITICAL RULES:
       shelters
 
   - In these cases:
-    - asset = the most specific description (e.g., Small Mosque Construction, Grand Mosque, Primary School Building Maintenance, Existing Relay Station, etc.)
+    - asset = the most specific description (e.g., Small Mosque, Grand Mosque, Primary School Building, Relay Station, etc.)
     - asset_category = the generic categorical type (e.g., Mosque, School, Hospital, Stations, etc.)
     - asset_quantity = the number of assets being built or constructed(e.g., 1, 2, etc.)
-
-   - Examples:
-    Small Mosque Construction → Mosque
-    Grand Mosque → Mosque
-    Girls' Primary School Maintenance → School
-    Residential House → House
 
     - If a project includes BOTH:
     (a) construction of new assets AND
     (b) maintenance, expansion, rehabilitation, or upgrading of existing assets,
     THEN you MUST create separate asset records.
-
-  - The asset name MUST be explicitly differentiated as follows:
-    • Use "<Asset Name> - Construction" for new builds
-    • Use "<Asset Name> - Maintenance" for expansion, rehabilitation, upgrading, or equipment addition
-
-  - NEVER use the same asset name for both construction and maintenance activities.
-  - This rule is MANDATORY even if the base asset type is the same.
 
 Asset category rules:
   - asset_category MUST be singular, generic, standardized
@@ -207,7 +195,7 @@ Asset category rules:
 
 Capacity extraction rules:
   - Extract capacity ONLY when it represents a technical/physical/equipment/storage/output capacity, such as:
-   - tanks/containers/storage: gallons, liters, L, m3, cubic meters
+   - tanks/containers/storage/area: gallons, liters, L, m3, cubic meters, m2
    - generators/electrical: kVA, kva, kW, kw, watts, W
    - similar measurable technical capacities explicitly tied to an asset/system
    - For any single asset, extract at most one capacity.
@@ -218,7 +206,7 @@ Capacity extraction rules:
    - "capacity: 3 kVA"
    - "water tank ... capacity of 1000 liters"
 
-  - DO NOT extract capacity when it describes people occupancy or attendance capacity, because that is beneficiary_count instead.
+  - DO NOT extract capacity when it describes people occupancy or attendance capacity, because that is beneficiary_count.
    - Exclude units/terms like: worshippers, people, persons, attendees, students, patients, families, households (when used as “capacity of X …”).
    - Examples to exclude:
      - "prayer hall with a capacity of 60 worshippers"  -> asset_capacity = NULL, asset_capacity_uom = NULL
@@ -252,12 +240,6 @@ Capacity extraction rules:
     - item_quantity = the number of items being distributed, etc. (e.g., 100, 2000, etc.)
     - item_quantity_uom = the unit of measurement for the items (e.g., Kilograms, Liters, Unit, etc.)
 
-  - Examples:
-      Wooden Furniture → Furniture
-      Food Basket → Food
-      Medical Equipment → Healthcare
-      Treatment → Healthcare
-
 4) Asset vs Item Decision Rule (CRITICAL):
   - If something is constructed or built, treat it as an asset.
   - If something is distributed or provided, treat it as an item.
@@ -278,50 +260,12 @@ Capacity extraction rules:
 
 7) When to extract individual items:
    - If there is NO parent container mentioned (no package/basket/kit/parcel/hospital/mosque/school), and the text lists items being delivered (e.g., "distributed rice, sugar, oil, constructed ablution seats, beds, rooms"),
-     then extract each item as its own asset (with quantities/uom if present).
+     then extract each item as its own item (with quantities/uom if present).
 
 8) Output format:
 - Output must be in the following format:
 {
-  "extractions": [
-    { "extraction_class": "master_project_title_en",        "extraction_text": "<string>" },
-    { "extraction_class": "master_project_description_en",  "extraction_text": "<string>" },
-    { "extraction_class": "master_project_title_ar",        "extraction_text": "<string>" },
-    { "extraction_class": "master_project_description_ar",  "extraction_text": "<string>" },
-
-    { "extraction_class": "project_title_en",               "extraction_text": "<string>" },
-    { "extraction_class": "project_description_en",         "extraction_text": "<string>" },
-    { "extraction_class": "project_title_ar",               "extraction_text": "<string>" },
-    { "extraction_class": "project_description_ar",         "extraction_text": "<number_or_string>" },
-    { "extraction_class": "beneficiary_count",              "extraction_text": "<string>" },
-    { "extraction_class": "beneficiary_group_name",         "extraction_text": "<string>" },
-    { "extraction_class": "asset",                          "extraction_text": "<string>" },
-    { "extraction_class": "asset_category",                 "extraction_text": "<string>" },
-    { "extraction_class": "asset_quantity",                 "extraction_text": "<number_or_string>" },
-    { "extraction_class": "asset_capacity",                 "extraction_text": "<number_or_string>" },
-    { "extraction_class": "asset_capacity_uom",             "extraction_text": "<string>" },
-    { "extraction_class": "item",                           "extraction_text": "<string>" },
-    { "extraction_class": "item_category",                  "extraction_text": "<string>" },
-    { "extraction_class": "item_quantity",                  "extraction_text": "<string>" },
-    { "extraction_class": "item_quantity_uom",              "extraction_text": "<string>" },
-
-    { "extraction_class": "project_title_en",               "extraction_text": "<string>" },
-    { "extraction_class": "project_description_en",         "extraction_text": "<string>" },
-    { "extraction_class": "project_title_ar",               "extraction_text": "<string>" },
-    { "extraction_class": "project_description_ar",         "extraction_text": "<number_or_string>" },
-    { "extraction_class": "beneficiary_count",              "extraction_text": "<string>" },
-    { "extraction_class": "beneficiary_group_name",         "extraction_text": "<string>" },
-    { "extraction_class": "asset",                          "extraction_text": "<string>" },
-    { "extraction_class": "asset_category",                 "extraction_text": "<string>" },
-    { "extraction_class": "asset_quantity",                 "extraction_text": "<number_or_string>" },
-    { "extraction_class": "asset_capacity",                 "extraction_text": "<number_or_string>" },
-    { "extraction_class": "asset_capacity_uom",             "extraction_text": "<string>" },
-    { "extraction_class": "asset",                          "extraction_text": "<string>" },
-    { "extraction_class": "asset_category",                 "extraction_text": "<string>" },
-    { "extraction_class": "asset_quantity",                 "extraction_text": "<number_or_string>" },
-    { "extraction_class": "asset_capacity",                 "extraction_text": "<number_or_string>" },
-    { "extraction_class": "asset_capacity_uom",             "extraction_text": "<string>" }
-  ],
+  "extractions": [...],
   "text": <string>,
   "index": <string>,
   "master_project_amount_actual": <float>,
@@ -331,8 +275,7 @@ Capacity extraction rules:
   "document_id": <string>
 }
    - extraction_text MUST be a string, integer, or float (never null, never a list/dict).
-   - If a field is not explicitly present, DO NOT output an extraction for it EXCEPT mandatory fields (master_project_title_en, master_project_title_ar, master_project_description_en, master_project_description_ar, project_title_en, project_title_ar, project_description_en, project_description_ar), which must always be produced using fallback rules.
-   - Do not use attributes for now (leave attributes empty).
+   - If a field is not explicitly present, DO NOT output an extraction for it EXCEPT for mandatory fields, which must always be produced using fallback rules.
     - Return ONLY valid JSON (no markdown, no commentary).
     - The top-level JSON MUST have exactly these keys:
       - "text": the original input text (string)
@@ -341,19 +284,10 @@ Capacity extraction rules:
     FINAL VALIDATION (MANDATORY):
     Before returning JSON:
     1) Remove any extraction whose extraction_text is label-only noise.
-    2) Ensure singleton fields master_project_title_en, master_project_title_ar, master_project_description_en, master_project_description_ar appear EXACTLY ONCE.
-       If duplicates exist, keep the best non-noise candidate and delete the rest.
-    
-9) MANDATORY FALLBACK RULE (critical):
-
-- master_project_title_en and project_title_en MUST ALWAYS be present.
-- If the input text is short, generic, or does not explicitly describe a project:
-    - Use the full input text verbatim as master_project_title_en.
-    - Use the same value as project_title_en.
-- Do NOT return an empty extractions list.
-- At minimum, always return:
-    - one master_project_title_en
-    - one project_title_en
+    2) Ensure Master Project fields are extracted EXACTLY ONCE in one extraction. If duplicates exist, keep the best non-noise candidate and delete the rest.
+    3) If you have already output a master_project_* field once, DO NOT output it again later in the list. Only keep the earliest occurrence.
+    4) Do not repeat the entire extraction list; do not restart extraction from the top.
+    5) Do not restart extraction. Once you output masterproject/project/item/asset fields, do not output master fields again.
 
 10) Amount extraction rules (IMPORTANT):
 
