@@ -178,15 +178,26 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
         master_project_ge_amount = to_float_or_none(doc.get("master_project_ge_amount"))
         master_project_off_amount = to_float_or_none(doc.get("master_project_off_amount"))
 
-        reconstructed = parse_langextract_grouped_pairs(doc)
+        # -----------------------
+        # extraction format changed
+        # doc now already contains "extractions": [{extraction_class, extraction_text, extraction_index, ...}, ...]
+        # -----------------------
+        raw_extractions = doc.get("extractions", [])
 
         exs = []
-        for e in reconstructed:
+        for e in raw_extractions:
             cls = normalize_class(e.get("extraction_class"))
             val = e.get("extraction_text")
             if val is None or str(val).strip() == "":
                 continue
-            exs.append({"cls": cls, "val": val, "idx": e.get("extraction_index", 10**9)})
+            exs.append(
+                {
+                    "cls": cls,
+                    "val": val,
+                    "idx": e.get("extraction_index", 10**9),
+                }
+            )
+
         exs.sort(key=lambda x: x["idx"])
 
         master_project_title_en = None
