@@ -155,6 +155,7 @@ master_to_next_prj = {}
 TS_INSERTED = datetime.now(timezone.utc)
 
 rows = []
+index_to_next_prj = {}  # index_key -> next prj suffix integer (starts at 0)
 
 with open(INPUT_JSONL, "r", encoding="utf-8") as f:
     for doc_index, line in enumerate(f, start=1):
@@ -221,9 +222,8 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
             next_master_num += 1
             master_project_code = fmt_mp(next_master_num)
             index_to_master_code[index_key] = master_project_code
-
-        if master_project_code not in master_to_next_prj:
-            master_to_next_prj[master_project_code] = master_to_max_prj.get(master_project_code, 0)
+        
+        index_to_next_prj[index_key] = 0
 
         global_ben_count = None
         global_ben_group = None
@@ -299,16 +299,9 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                     current_item = None
 
                 current_project_title_en = smart_title_case(val)
-                reuse_key = (index_key, current_project_title_en)
-
-                if index_key and current_project_title_en and reuse_key in index_title_to_prj_code:
-                    current_project_code = index_title_to_prj_code[reuse_key]
-                else:
-                    master_to_next_prj[master_project_code] += 1
-                    prj_num = master_to_next_prj[master_project_code]
-                    current_project_code = fmt_prj(master_project_code, prj_num)
-                    if index_key and current_project_title_en:
-                        index_title_to_prj_code[reuse_key] = current_project_code
+                index_to_next_prj[index_key] += 1
+                prj_num = index_to_next_prj[index_key]
+                current_project_code = fmt_prj(master_project_code, prj_num)
 
                 seen_projects_in_doc.append((current_project_code, current_project_title_en))
                 project_ben[current_project_code] = {"beneficiary_count": None, "beneficiary_group_name": None}
@@ -592,9 +585,10 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                 backfill_project_amount_extracted(prj_code, amt)
 
         if not seen_projects_in_doc:
-            master_to_next_prj[master_project_code] += 1
-            prj_num = master_to_next_prj[master_project_code]
+            index_to_next_prj[index_key] += 1
+            prj_num = index_to_next_prj[index_key]
             current_project_code = fmt_prj(master_project_code, prj_num)
+
 
             seen_projects_in_doc.append((current_project_code, None))
             project_ben[current_project_code] = {
