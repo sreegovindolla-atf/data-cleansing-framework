@@ -26,7 +26,7 @@ sns.set_theme(style="whitegrid")
 # Config for histogram
 # -----------------------------------
 threshold = 0.75
-bins = np.arange(0.4, 1.0001, 0.005)
+bins = np.arange(0.45, 1.0001, 0.005)
 
 # Define the 4 plots
 plots = [
@@ -77,12 +77,13 @@ for i, p in enumerate(plots, start=1):
         x="similarity_score",
         bins=bins,
         kde=False,
+        color="#D4AF37",
         edgecolor="white",
         linewidth=0.5
     )
 
     # Threshold line
-    plt.axvline(threshold, linestyle="--", linewidth=2, label=f"Threshold = {threshold:.2f}")
+    plt.axvline(threshold, linestyle="--", linewidth=2, color="#8B4513", label=f"Threshold = {threshold:.2f}")
 
     plt.title(p["title"], fontsize=14)
     plt.xlabel("Similarity Score")
