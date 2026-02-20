@@ -371,4 +371,7 @@ def build_project_attr_prompt(allowed_subsectors: List[str]) -> str:
         If emergency_title DOES NOT have a meaningful value:
         - subsector MUST NOT start with "Emergency"
         - NEVER select an Emergency subsector
+      
+      Allowed subsector values:
+      {subsector_bullets}
       """.strip()
