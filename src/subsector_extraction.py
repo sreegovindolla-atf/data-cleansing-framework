@@ -106,7 +106,7 @@ allowed_subsectors = load_allowed_subsectors(engine)
 allowed_mdg_targets = load_allowed_mdg_targets(engine)
 allowed_sdg_targets = load_allowed_sdg_targets(engine)
 
-ATTR_PROMPT = build_project_attr_prompt(allowed_subsectors, allowed_mdg_targets, allowed_sdg_targets)
+ATTR_PROMPT = build_project_attr_prompt(allowed_subsectors)
 
 # -----------------------
 # extraction loop
