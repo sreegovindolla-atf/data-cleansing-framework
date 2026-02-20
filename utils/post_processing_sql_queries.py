@@ -7,12 +7,12 @@ QUERIES = [
 
     """INSERT INTO silver.cleaned_master_project
        SELECT DISTINCT
-           [Index],
+           a.[Index],
            master_project_code,
            master_project_title_en,
-           master_project_description_en,
+           COALESCE(a.master_project_description_en, b.master_project_description_en)   AS master_project_description_en,
            master_project_title_ar,
-           master_project_description_ar,
+           COALESCE(a.master_project_description_ar, b.master_project_description_ar)   AS master_project_description_ar,
            input_text,
            master_project_amount_actual,
            FORMAT(master_project_amount_actual, 'N2') AS formatted_master_project_amount_actual,
@@ -22,7 +22,9 @@ QUERIES = [
            FORMAT(master_project_ge_amount, 'N2') AS formatted_master_project_ge_amount,
            master_project_off_amount,
            FORMAT(master_project_off_amount, 'N2') AS formatted_master_project_off_amount
-       FROM silver.MasterTable_extracted""",
+       FROM silver.MasterTable_extracted a
+       LEFT JOIN silver.cleaned_master_project_description b
+        ON a.[index] = b.[index]""",
 
     """INSERT INTO silver.cleaned_project
        SELECT DISTINCT
@@ -34,10 +36,7 @@ QUERIES = [
            project_description_en,
            project_description_ar,
            b.project_type,
-           CASE 
-            WHEN beneficiary_group_name like '%famil%' THEN beneficiary_count * 4
-            ELSE beneficiary_count
-           END AS beneficiary_count,
+           beneficiary_count,
            beneficiary_group_name,
            input_text,
            project_amount_actual,
