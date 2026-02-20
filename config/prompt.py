@@ -334,11 +334,11 @@ AMOUNT RULES (IMPORTANT):
 
 from typing import List
 
-def build_project_attr_prompt(allowed_subsectors: List[str], allowed_mdg_targets: List[str], allowed_sdg_targets: List[str]) -> str:
-#def build_project_attr_prompt(allowed_subsectors: List[str]) -> str:
+#def build_project_attr_prompt(allowed_subsectors: List[str], allowed_mdg_targets: List[str], allowed_sdg_targets: List[str]) -> str:
+def build_project_attr_prompt(allowed_subsectors: List[str]) -> str:
     subsector_bullets = "\n".join([f"- {v}" for v in allowed_subsectors])
-    mdg_target_bullets = "\n".join([f"- {v}" for v in allowed_mdg_targets])
-    sdg_target_bullets = "\n".join([f"- {v}" for v in allowed_sdg_targets])
+    #mdg_target_bullets = "\n".join([f"- {v}" for v in allowed_mdg_targets])
+    #sdg_target_bullets = "\n".join([f"- {v}" for v in allowed_sdg_targets])
 
     return f"""
       Extract the following fields from the input text:
@@ -371,35 +371,4 @@ def build_project_attr_prompt(allowed_subsectors: List[str], allowed_mdg_targets
         If emergency_title DOES NOT have a meaningful value:
         - subsector MUST NOT start with "Emergency"
         - NEVER select an Emergency subsector
-      
-      Allowed subsector values:
-      {subsector_bullets}
-
-      TARGET RULES:
-      Framework selection:
-      - If project_year <= 2015: select target_en ONLY from the MDG target list.
-      - If project_year > 2015: select target_en ONLY from the SDG target list.
-      - NEVER select from the wrong list.
-      
-      Closed-set enforcement:
-      - target_en MUST be copied EXACTLY from ONE of the allowed values below.
-      - Do NOT paraphrase, summarize, shorten, or rewrite target text.
-      - Do NOT invent new targets.
-      - Do NOT combine multiple targets.
-      - Return EXACTLY ONE target_en value.
-      - Do NOT return NULL. It is a mandatory field.
-      
-      Matching rule:
-      - Select the SINGLE allowed target that best matches the PRIMARY intended outcome.
-      
-      Classification constraints:
-      - Do NOT classify based on beneficiaries alone.
-      - Do NOT classify by activities, inputs, or delivery mechanisms.
-      - Targets represent intended OUTCOMES only.
-
-      Allowed MDG target values (use only if project_year <= 2015):
-      {mdg_target_bullets}
-
-      Allowed SDG target values (use only if project_year > 2015):
-      {sdg_target_bullets}
       """.strip()
