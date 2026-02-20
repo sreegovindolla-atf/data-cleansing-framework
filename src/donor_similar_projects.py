@@ -16,7 +16,7 @@ SCHEMA    = "silver"
 TABLE     = "similar_projects" 
 DONOR_COL = "donor_name_en"
 
-BASE_OUTPUT_DIR = Path("data/outputs/donor_similar_project_excels")
+BASE_OUTPUT_DIR = Path("data/outputs/projects/donor_similar_project_excels")
 BASE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # -----------------------------
