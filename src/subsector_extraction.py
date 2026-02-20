@@ -95,6 +95,13 @@ WHERE cp.master_project_code IN (
 LEFT JOIN [dbo].[MasterTableDenormalizedCleanedFinal] b
     ON a.[index] = b.[index]
 """
+
+#SOURCE_QUERY = """
+#select *
+#from silver.cleaned_project_attributes
+#where extracted_sector_en is null
+#"""
+
 df_input = pd.read_sql(SOURCE_QUERY, engine)
 
 EXAMPLES = ATTR_EXAMPLES
