@@ -44,7 +44,7 @@ DEFAULT_SIMILARITY_THRESHOLD = 0.75
 HISTOGRAM_THRESHOLD = 0.5
 
 # Target Schema
-DEAFULT_TARGET_SCHEMA = "silver"
+DEFAULT_TARGET_SCHEMA = "silver"
 HISTOGRAM_TARGET_SCHEMA = "histogram"
 
 # Mode dependent configurations
