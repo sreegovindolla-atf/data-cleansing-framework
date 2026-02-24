@@ -184,14 +184,17 @@ EXAMPLES = [
 
 SOURCE_QUERY = """
 SELECT
-    [index]
-    , project_code
-    , project_title_en
-    , project_description_en
-    , project_title_ar
-    , project_description_ar
-FROM silver.cleaned_project
-WHERE [index] LIKE 'BIG%'
+    cp.[index]
+    , cp.project_code
+    , cp.project_title_en
+    , cp.project_description_en
+    , cp.project_title_ar
+    , cp.project_description_ar
+FROM silver.cleaned_project cp
+WHERE cp.project_code NOT IN (
+    SELECT project_code
+    FROM silver.cleaned_project_type
+)
 """
 
 df_input = pd.read_sql(SOURCE_QUERY, engine)
