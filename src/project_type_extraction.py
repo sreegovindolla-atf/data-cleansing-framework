@@ -1,4 +1,3 @@
-# project_type_extraction.py
 from dotenv import load_dotenv
 load_dotenv(override=True)
 
@@ -71,10 +70,10 @@ engine = get_sql_server_engine()
 # =====================================
 ALLOWED_PROJECT_TYPES = [
     "New Construction",
-    "Repair/Maintenance",
+    "Repair / Maintenance",
     "Service Delivery",
     "Training / Capacity Building",
-    "Program Implementation/ Operation"
+    "Program Implementation / Operation"
 ]
 
 PROMPT_PROJECT_TYPE = f"""
@@ -86,6 +85,19 @@ RULES (STRICT):
 - project_type MUST be exactly one of the allowed values below (match text exactly).
 - Do NOT invent new values. Do NOT return NULL.
 - Choose the most dominant intervention type described in the project title/description.
+
+DECISION GUIDANCE (IMPORTANT):
+- If the project involves installing, setting up, commissioning, equipping, supplying and installing, upgrading systems (e.g., solar panels/energy systems, generators, HVAC/AC, firefighting systems, pumps, medical equipment, IT/computerized systems), classify it as:
+  "Program Implementation / Operation"
+  even if the title contains the word "construction" loosely (unless it clearly describes constructing a new building/facility).
+- Only choose "New Construction" when the project is primarily about constructing a NEW physical structure (e.g., building a hospital, school, mosque, center, wells, etc).
+- Only choose "Repair / Maintenance" when the project is primarily about rehabilitation/renovation/repair/maintenance of an existing structure (e.g., repairing classrooms, rehabilitating a clinic building, renovating a facility).
+- Choose "Service Delivery" when the core intervention is the ongoing delivery of services (e.g., healthcare services, mobile clinics delivering care, education delivery, food distribution, etc), not procurement/installation.
+- Choose "Training / Capacity Building" when the core intervention is training/workshops/capacity building.
+
+TIE-BREAKER:
+- If both construction/repair and installation/procurement are mentioned, pick the dominant one.
+- If installation/equipping is the main action and construction/repair is secondary or implied, pick "Program Implementation/ Operation".
 
 ALLOWED VALUES:
 {chr(10).join([f"- {x}" for x in ALLOWED_PROJECT_TYPES])}
@@ -120,7 +132,7 @@ EXAMPLES = [
         extractions=[
             lx.data.Extraction(
                 extraction_class="project_type",
-                extraction_text="Repair/Maintenance",
+                extraction_text="Repair / Maintenance",
             ),
         ],
     ),
@@ -137,16 +149,15 @@ EXAMPLES = [
             ),
         ],
     ),
-
     lx.data.ExampleData(
         text=(
-            "EN_TITLE: Emergency food assistance\n"
-            "EN_DESC: Immediate humanitarian assistance with food baskets.\n"
+            "EN_TITLE: Installation of Ac Units and Firefighting System to the Ready Made Garment Factory\n"
+            "EN_DESC: Provide sustainable, continuous electricity to the orphanage by installing solar energy systems\n"
         ),
         extractions=[
             lx.data.Extraction(
                 extraction_class="project_type",
-                extraction_text="Humanitarian Assistance",
+                extraction_text="Program Implementation / Operation",
             ),
         ],
     ),
