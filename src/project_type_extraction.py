@@ -70,32 +70,11 @@ engine = get_sql_server_engine()
 # PROMPT (project_type only)
 # =====================================
 ALLOWED_PROJECT_TYPES = [
-    "Construction",
-    "Reconstruction",
-    "Rehabilitation",
-    "Renovation",
-    "Expansion",
-    "Maintenance",
-    "Repair",
+    "New Construction",
+    "Repair/Maintenance",
     "Service Delivery",
-    "Operations",
-    "Program Implementation",
-    "Pilot",
-    "Scale-up",
-    "Capacity Building",
-    "Training",
-    "Technical Assistance",
-    "Institutional Strengthening",
-    "Policy Support",
-    "Emergency Response",
-    "Humanitarian Assistance",
-    "Early Recovery",
-    "Disaster Risk Reduction",
-    "Monitoring & Evaluation",
-    "Research & Studies",
-    "Awareness & Advocacy",
-    "Data / Systems Development",
-    "Other",
+    "Training / Capacity Building",
+    "Program Implementation/ Operation"
 ]
 
 PROMPT_PROJECT_TYPE = f"""
@@ -105,9 +84,8 @@ Extract the following field from the input text:
 RULES (STRICT):
 - Return EXACTLY one value for project_type.
 - project_type MUST be exactly one of the allowed values below (match text exactly).
-- Do NOT invent new values.
+- Do NOT invent new values. Do NOT return NULL.
 - Choose the most dominant intervention type described in the project title/description.
-- If nothing is clear, return "Other".
 
 ALLOWED VALUES:
 {chr(10).join([f"- {x}" for x in ALLOWED_PROJECT_TYPES])}
@@ -129,7 +107,7 @@ EXAMPLES = [
         extractions=[
             lx.data.Extraction(
                 extraction_class="project_type",
-                extraction_text="Construction",
+                extraction_text="New Construction",
             ),
         ],
     ),
@@ -142,7 +120,7 @@ EXAMPLES = [
         extractions=[
             lx.data.Extraction(
                 extraction_class="project_type",
-                extraction_text="Rehabilitation",
+                extraction_text="Repair/Maintenance",
             ),
         ],
     ),
@@ -178,19 +156,31 @@ EXAMPLES = [
 # =====================================
 # SOURCE QUERY (from your cleaned_project)
 # =====================================
+#SOURCE_QUERY = """
+#SELECT
+#      cp.project_code
+#    , cp.project_title_en
+#    , cp.project_description_en
+#    , cp.project_title_ar
+#    , cp.project_description_ar
+#FROM silver.cleaned_project cp
+#WHERE NOT EXISTS (
+#    SELECT 1
+#    FROM silver.cleaned_project_type pt
+#    WHERE pt.project_code = cp.project_code
+#);
+#"""
+
 SOURCE_QUERY = """
 SELECT
-      cp.project_code
-    , cp.project_title_en
-    , cp.project_description_en
-    , cp.project_title_ar
-    , cp.project_description_ar
-FROM silver.cleaned_project cp
-WHERE NOT EXISTS (
-    SELECT 1
-    FROM silver.cleaned_project_type pt
-    WHERE pt.project_code = cp.project_code
-);
+    [index]
+    , project_code
+    , project_title_en
+    , project_description_en
+    , project_title_ar
+    , project_description_ar
+FROM silver.cleaned_project
+WHERE [index] LIKE 'BIG%'
 """
 
 df_input = pd.read_sql(SOURCE_QUERY, engine)
