@@ -3,6 +3,8 @@ SEMANTIC_SIMILARITY_CONFIG = {
         "emb_table": "silver.master_project_embeddings",
         "target_table":  "similar_master_projects",
         "histogram_target_table":  "similar_master_projects",
+        "cluster_target_table": "similar_master_projects_clusters",
+        "histogram_cluster_target_table":  "similar_master_projects",
         "source_sql": """
         SELECT
             a.[index]
@@ -139,6 +141,8 @@ SEMANTIC_SIMILARITY_CONFIG = {
         "emb_table": "silver.project_embeddings",
         "target_table":  "similar_projects",
         "histogram_target_table":  "similar_projects",
+        "cluster_target_table": "similar_projects_clusters",
+        "histogram_cluster_target_table": "similar_projects_clusters",
         "source_sql": """
         SELECT
             a.[index]
@@ -307,7 +311,7 @@ COMPUTE_EMB_CONFIG = {
                         LEFT JOIN dbo.MasterTableDenormalizedCleanedFinal b
                             ON a.[index] = b.[index]
                         WHERE 1=1
-                        AND a.[index] NOT LIKE '%ADFD-%'
+                        --AND a.[index] NOT LIKE '%ADFD-%'
                         """
             },
     "projects": {
@@ -337,7 +341,7 @@ COMPUTE_EMB_CONFIG = {
                             , project_description_ar
                         FROM silver.cleaned_project
                         WHERE 1=1
-                        AND [index] NOT LIKE '%ADFD-%'
+                        --AND [index] NOT LIKE '%ADFD-%'
                         """
     }
 }

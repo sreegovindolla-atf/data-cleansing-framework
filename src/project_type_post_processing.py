@@ -1,4 +1,3 @@
-# project_type_postprocess_to_new_table.py
 import json
 import pandas as pd
 import argparse
@@ -98,9 +97,7 @@ dtype = {
     "project_type": NVARCHAR(length=200),
 }
 
-# If you want "replace each run" behavior:
-# - drop & recreate table contents
-# - simplest and avoids duplicates
+# drop & recreate table contents
 with engine.begin() as conn:
     conn.execute(
         sql_text(
