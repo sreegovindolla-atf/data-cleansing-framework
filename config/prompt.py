@@ -137,6 +137,7 @@ CRITICAL RULES:
     - Do NOT create additional set of Project fields for actions that do not have their own explicit amount; instead, group such actions with the most relevant amount-bearing project or keep them under the master scope.
 
 - Split the Master Project into multiple Projects ONLY when:
+  - When different physical assets are being constructed within the same master project (ex. Construction of Mosques and Wells MUST be splitted)
   - The text describes separate actions applied to different targets or entities
     (e.g., different buildings, locations, beneficiary groups, or deliverables), OR
   - The text enumerates multiple activities that are conceptually independent
