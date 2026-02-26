@@ -87,17 +87,21 @@ RULES (STRICT):
 - Choose the most dominant intervention type described in the project title/description.
 
 DECISION GUIDANCE (IMPORTANT):
-- If the project involves installing, setting up, commissioning, equipping, supplying and installing, upgrading systems (e.g., solar panels/energy systems, generators, HVAC/AC, firefighting systems, pumps, medical equipment, IT/computerized systems), classify it as:
+- If the project involves installing, setting up, commissioning, equipping, supplying and installing, upgrading systems (e.g., solar panels/energy systems, generators, HVAC/AC, firefighting systems, pumps, medical equipment, IT/computerized systems)
+    , sponsoring, sponsorship, seasonal, agricultural, economic development, support individuals and communities, sacrifices, tree, chair, salary, administrative
+    ,  classify it as:
   "Program Implementation / Operation"
   even if the title contains the word "construction" loosely (unless it clearly describes constructing a new building/facility).
-- Only choose "New Construction" when the project is primarily about constructing a NEW physical structure (e.g., building a hospital, school, mosque, center, wells, etc).
+- Choose "New Construction" ONLY if the text explicitly describes constructing/building a NEW physical structure
+  (e.g., "construct/build/new building/new facility/new center/new school/new hospital/new mosque/new well").
 - Only choose "Repair / Maintenance" when the project is primarily about rehabilitation/renovation/repair/maintenance of an existing structure (e.g., repairing classrooms, rehabilitating a clinic building, renovating a facility).
 - Choose "Service Delivery" when the core intervention is the ongoing delivery of services (e.g., healthcare services, mobile clinics delivering care, education delivery, food distribution, etc), not procurement/installation.
 - Choose "Training / Capacity Building" when the core intervention is training/workshops/capacity building.
 
 TIE-BREAKER:
 - If both construction/repair and installation/procurement are mentioned, pick the dominant one.
-- If installation/equipping is the main action and construction/repair is secondary or implied, pick "Program Implementation/ Operation".
+- If installation/equipping is the main action and construction/repair is secondary or implied, pick "Program Implementation / Operation".
+- If unclear between categories, choose "Program Implementation / Operation".
 
 ALLOWED VALUES:
 {chr(10).join([f"- {x}" for x in ALLOWED_PROJECT_TYPES])}
@@ -161,6 +165,42 @@ EXAMPLES = [
             ),
         ],
     ),
+    lx.data.ExampleData(
+        text=(
+            "EN_TITLE: Orphans Sponsorship\n"
+            "EN_DESC: Provision of sponsorship services for orphans as part of social welfare initiatives.\n"
+        ),
+        extractions=[
+            lx.data.Extraction(
+                extraction_class="project_type",
+                extraction_text="Program Implementation / Operation",
+            ),
+        ],
+    ),
+    lx.data.ExampleData(
+        text=(
+            "EN_TITLE: Seasonal Programs Outside the State\n"
+            "EN_DESC: Seasonal programs outside the State\n"
+        ),
+        extractions=[
+            lx.data.Extraction(
+                extraction_class="project_type",
+                extraction_text="Program Implementation / Operation",
+            ),
+        ],
+    ),
+    lx.data.ExampleData(
+        text=(
+            "EN_TITLE: Education Policy and Administration\n"
+            "EN_DESC: Education Policy and Administration\n"
+        ),
+        extractions=[
+            lx.data.Extraction(
+                extraction_class="project_type",
+                extraction_text="Program Implementation / Operation",
+            ),
+        ],
+    ),
 ]
 
 
@@ -184,16 +224,17 @@ EXAMPLES = [
 
 SOURCE_QUERY = """
 SELECT
-    cp.[index]
-    , cp.project_code
-    , cp.project_title_en
-    , cp.project_description_en
-    , cp.project_title_ar
-    , cp.project_description_ar
-FROM silver.cleaned_project cp
-WHERE cp.project_code NOT IN (
-    SELECT project_code
-    FROM silver.cleaned_project_type
+    cp.[index],
+    cp.project_code,
+    cp.project_title_en,
+    cp.project_description_en,
+    cp.project_title_ar,
+    cp.project_description_ar
+FROM silver.cleaned_project cp    
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM silver.cleaned_project_type cpt
+    WHERE cpt.project_code = cp.project_code
 )
 """
 
