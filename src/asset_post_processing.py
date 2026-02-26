@@ -4,7 +4,7 @@ import argparse
 import urllib
 from pathlib import Path
 from sqlalchemy import create_engine, text as sql_text
-from sqlalchemy.types import NVARCHAR
+from sqlalchemy.types import NVARCHAR, Float, Integer
 import sys
 import re
 
@@ -71,23 +71,108 @@ def normalize_asset_text(asset: str) -> str | None:
         return None
 
     s = str(asset).strip()
-
     if s == "" or s.lower() in {"null", "none", "n/a", "na", "nan", "-"}:
         return None
 
-    # basic whitespace normalization
     s = re.sub(r"\s+", " ", s)
-
-    # standardize spelling variants
-    # daycare -> day care (your exact issue)
     s = re.sub(r"\bdaycare\b", "day care", s, flags=re.IGNORECASE)
     s = re.sub(r"\bhealthcare\b", "health care", s, flags=re.IGNORECASE)
     s = s.title()
-
     return s
 
+def to_int_or_none(x) -> int | None:
+    """Parse integer quantities like '2', '02', '2.0'. Reject non-numeric."""
+    x = to_none_if_nullish(x)
+    if x is None:
+        return None
+    s = str(x).strip()
+    s = s.replace(",", "")
+    # allow "2.0" but store as 2
+    if re.fullmatch(r"\d+(\.0+)?", s):
+        return int(float(s))
+    if re.fullmatch(r"\d+", s):
+        return int(s)
+    return None
+
+def to_float_or_none(x) -> float | None:
+    """Parse numeric capacities like '1000', '1,000', '1000.5'. Reject non-numeric."""
+    x = to_none_if_nullish(x)
+    if x is None:
+        return None
+    s = str(x).strip().replace(",", "")
+    if re.fullmatch(r"\d+(\.\d+)?", s):
+        return float(s)
+    return None
+
+def normalize_uom(uom: str) -> str | None:
+    """
+    Normalize unit variants to a canonical representation.
+    Keep it simple + predictable for analytics.
+    """
+    uom = to_none_if_nullish(uom)
+    if uom is None:
+        return None
+
+    s = str(uom).strip()
+
+    # normalize common variants -> canonical
+    key = s.strip().lower()
+
+    mapping = {
+        # volume
+        "l": "Liter",
+        "liter": "Liter",
+        "litre": "Liter",
+        "liters": "Liter",
+        "litres": "Liter",
+
+        "gal": "Gallon",
+        "gallon": "Gallon",
+        "gallons": "Gallon",
+
+        "m3": "Cubic Meter",
+        "m³": "Cubic Meter",
+        "cubic meter": "Cubic Meter",
+        "cubic meters": "Cubic Meter",
+
+        # area
+        "m2": "Square Meter",
+        "m²": "Square Meter",
+        "sqm": "Square Meter",
+        "sq m": "Square Meter",
+        "sq. m": "Square Meter",
+        "square meter": "Square Meter",
+        "square meters": "Square Meter",
+
+        # power
+        "kva": "kVA",
+        "kv-a": "kVA",
+        "k.v.a": "kVA",
+
+        "kw": "kW",
+        "kilowatt": "kW",
+        "kilowatts": "kW",
+
+        "w": "W",
+        "watt": "W",
+        "watts": "W",
+    }
+
+    canon = mapping.get(key)
+    if canon:
+        return canon
+
+    # If model outputs already canonical, keep it:
+    canonical_set = {"Liter", "Gallon", "Cubic Meter", "Square Meter", "kVA", "kW", "W"}
+    if s in canonical_set:
+        return s
+
+    # Fallback: keep original cleaned, but title-case common words
+    # (If you want STRICT enforcement, replace this with "return None")
+    return s.strip()
+
 # -----------------------
-# parse JSONL -> (project_code, asset, asset_category)
+# parse JSONL -> rows
 # Keep rows even when asset is NULL, so SQL stores NULLs.
 # -----------------------
 rows = []
@@ -103,6 +188,9 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
 
         asset = None
         asset_category = None
+        asset_quantity = None
+        asset_capacity = None
+        asset_capacity_uom = None
 
         # pick first non-nullish value for each extraction_class
         for e in exs:
@@ -113,13 +201,19 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                 asset = val
             elif cls == "asset_category" and asset_category is None:
                 asset_category = val
+            elif cls == "asset_quantity" and asset_quantity is None:
+                asset_quantity = val
+            elif cls == "asset_capacity" and asset_capacity is None:
+                asset_capacity = val
+            elif cls == "asset_capacity_uom" and asset_capacity_uom is None:
+                asset_capacity_uom = val
 
-            if asset is not None and asset_category is not None:
-                break
-
-        # enforce: if asset is NULL => asset_category must be NULL
+        # enforce: if asset is NULL => everything else must be NULL
         if asset is None:
             asset_category = None
+            asset_quantity = None
+            asset_capacity = None
+            asset_capacity_uom = None
 
         if project_code:
             rows.append(
@@ -127,26 +221,42 @@ with open(INPUT_JSONL, "r", encoding="utf-8") as f:
                     "project_code": project_code,
                     "asset": asset,
                     "asset_category": asset_category,
+                    "asset_quantity": asset_quantity,
+                    "asset_capacity": asset_capacity,
+                    "asset_capacity_uom": asset_capacity_uom,
                 }
             )
 
 df = pd.DataFrame(rows)
+
+# -----------------------
+# normalization / typing
+# -----------------------
 df["asset"] = df["asset"].apply(normalize_asset_text)
+df["asset_quantity"] = df["asset_quantity"].apply(to_int_or_none)
+df["asset_capacity"] = df["asset_capacity"].apply(to_float_or_none)
+df["asset_capacity_uom"] = df["asset_capacity_uom"].apply(normalize_uom)
+
+# enforce: if capacity is NULL => uom must be NULL
+df.loc[df["asset_capacity"].isna(), "asset_capacity_uom"] = None
+
+# enforce: if asset is NULL => all dependent fields NULL (again, after normalization)
+null_asset_mask = df["asset"].isna()
+df.loc[null_asset_mask, ["asset_category", "asset_quantity", "asset_capacity", "asset_capacity_uom"]] = None
 
 if df.empty:
     print("[INFO] No rows found in JSONL. Nothing to write.")
     raise SystemExit(0)
 
-# Only one asset & asset category per project_code
+# Only one asset record per project_code (keep first)
 df = df.drop_duplicates(subset=["project_code"], keep="first")
-
-# Multiple assets & asset categories per project_code
-#df = df.drop_duplicates(subset=["project_code", "asset", "asset_category"], keep="first")
 
 print("[INFO] Total rows:", len(df))
 print("[INFO] NULL asset rows:", int(df["asset"].isna().sum()))
 print("[INFO] asset_category value counts (incl NULL):")
 print(df["asset_category"].fillna("<<NULL>>").value_counts().head(20))
+print("[INFO] asset_capacity_uom value counts (incl NULL):")
+print(df["asset_capacity_uom"].fillna("<<NULL>>").value_counts().head(20))
 
 # -----------------------
 # write CSV
@@ -156,12 +266,15 @@ df.to_csv(OUT_CSV, index=False)
 print(f"[DONE] Saved CSV: {OUT_CSV}")
 
 # -----------------------
-# write to NEW SQL table (truncate + append)
+# write to SQL Server (truncate + append)
 # -----------------------
 dtype = {
     "project_code": NVARCHAR(length=255),
     "asset": NVARCHAR(length=400),
     "asset_category": NVARCHAR(length=100),
+    "asset_quantity": Integer(),
+    "asset_capacity": Float(),
+    "asset_capacity_uom": NVARCHAR(length=60),
 }
 
 with engine.begin() as conn:

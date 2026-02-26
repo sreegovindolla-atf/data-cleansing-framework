@@ -96,6 +96,9 @@ PROMPT_ASSET = f"""
 Extract the following fields from the input text:
 - asset
 - asset_category
+- asset_quantity
+- asset_capacity
+- asset_capacity_uom
 
 DEFINITION (VERY IMPORTANT):
 An "asset" here means ONLY a PHYSICAL CONSTRUCTION / BUILT INFRASTRUCTURE (a structure that is built/constructed/rehabilitated).
@@ -104,9 +107,8 @@ Asset must be a place/structure, not a movable item, not supplies, not cash, not
 STRICT RULES:
 - Return EXACTLY ONE value for asset and EXACTLY ONE value for asset_category.
 - If the project does NOT involve building/constructing/rehabilitating a physical structure, then:
-  asset = NULL
-  asset_category = NULL
-- Do NOT return None/none/null. Use the literal token NULL.
+  asset = "NULL"
+  asset_category = "NULL"
 
 WHAT COUNTS AS A VALID ASSET (examples):
 - Hospital Building, Clinic Building, School Building, Classrooms, Health Center, Training Center,
@@ -128,6 +130,35 @@ asset_category RULES:
 - asset_category MUST be exactly one of the allowed values below (match text exactly).
 - Do NOT invent new values.
 
+asset_quantity RULES:
+- asset_quantity = the number of assets being built or constructed(e.g., 1, 2, etc.)
+
+asset_capacity RULES:
+  - Extract capacity ONLY when it represents a technical/physical/equipment/storage/output capacity, such as:
+   - tanks/containers/storage/area/mosque area: gallons, liters, L, m3, cubic meters, m2
+   - generators/electrical: kVA, kva, kW, kw, watts, W
+   - similar measurable technical capacities explicitly tied to an asset/system
+   - For any single asset, extract at most one capacity.
+   - If the same asset's capacity is expressed multiple times or in different units (e.g., liters and gallons), select only one capacity-unit pair and ignore the rest.
+
+  - Capacity should be extracted when phrased like:
+   - "capacity of 522 gallons"
+   - "capacity: 3 kVA"
+   - "water tank ... capacity of 1000 liters"
+   - "mosque with an area of 50 square meters"
+
+  - DO NOT extract capacity when it describes people occupancy or attendance capacity, because that is beneficiary_count.
+   - Exclude units/terms like: worshippers, people, persons, attendees, students, patients, families, households (when used as “capacity of X …”).
+   - Examples to exclude:
+     - "prayer hall with a capacity of 60 worshippers"
+     - "mosque with a capacity of 60 worshippers"    
+   - Hard exclusion: If the word immediately following the capacity number is a human-group term (worshippers/people/persons/etc.), do not extract capacity.
+
+  - Output formatting constraints:
+    - asset_capacity: return only the number (e.g., 522, 3, 1000)
+    - asset_capacity_uom: return only the unit (e.g., Gallon, kVA, Liter, Square Meter, Cubic Liter); return in the singluar form
+    - If capacity is not present or excluded by rules, return "NULL" for both fields.
+
 ALLOWED VALUES for asset_category:
 {chr(10).join([f"- {x}" for x in ALLOWED_ASSET_CATEGORIES])}
 
@@ -136,19 +167,22 @@ MAPPING GUIDANCE:
 - If the asset is explicitly a well / water well / borewell -> asset_category = "Well"
 - If the asset is a "center" (health center, training center, community center, rehabilitation center, etc.) -> asset_category = "Center"
 - Otherwise if it is a general building/facility (hospital, clinic, school building, classrooms, shelter, facility, building, etc.) -> asset_category = "Facility / Building"
-- If asset is NULL, asset_category also MUST be NULL
+- If asset is "NULL", asset_category also MUST be "NULL"
 
 OUTPUT FORMAT:
-Return extractions with:
-- extraction_class: asset
-- extraction_text: <physical construction in English>
-AND
-- extraction_class: asset_category
-- extraction_text: <one allowed value>
+- All fields MUST be in English ONLY
 
-- If no physical construction exists, set:
-  asset = NULL
-  asset_category = NULL
+Return EXACTLY 5 extractions, in this order:
+1) extraction_class: asset
+- extraction_text: <physical construction in English>
+2) extraction_class: asset_category
+- extraction_text: <one allowed value>
+3) extraction_class: asset_quantity
+- extraction_text: <quantity numeric value>
+4) extraction_class: asset_capacity
+- extraction_text: <capacity numeric value>
+5) extraction_class: asset_capacity_uom
+- extraction_text: <unit of measurement of the asset capacity>
 """
 
 # =====================================
@@ -165,6 +199,9 @@ EXAMPLES = [
         extractions=[
             lx.data.Extraction(extraction_class="asset", extraction_text="Hospital building"),
             lx.data.Extraction(extraction_class="asset_category", extraction_text="Facility / Building"),
+            lx.data.Extraction(extraction_class="asset_quantity", extraction_text="1"),
+            lx.data.Extraction(extraction_class="asset_capacity", extraction_text="40"),
+            lx.data.Extraction(extraction_class="asset_capacity_uom", extraction_text="Bed"),
         ],
     ),
     lx.data.ExampleData(
@@ -175,6 +212,7 @@ EXAMPLES = [
         extractions=[
             lx.data.Extraction(extraction_class="asset", extraction_text="School building"),
             lx.data.Extraction(extraction_class="asset_category", extraction_text="Facility / Building"),
+            lx.data.Extraction(extraction_class="asset_quantity", extraction_text="1"),
         ],
     ),
     lx.data.ExampleData(
@@ -195,6 +233,7 @@ EXAMPLES = [
         extractions=[
             lx.data.Extraction(extraction_class="asset", extraction_text="Community mosque"),
             lx.data.Extraction(extraction_class="asset_category", extraction_text="Mosque"),
+            lx.data.Extraction(extraction_class="asset_quantity", extraction_text="1"),
         ],
     ),
     lx.data.ExampleData(
@@ -205,6 +244,20 @@ EXAMPLES = [
         extractions=[
             lx.data.Extraction(extraction_class="asset", extraction_text="Rehabilitation center"),
             lx.data.Extraction(extraction_class="asset_category", extraction_text="Center"),
+            lx.data.Extraction(extraction_class="asset_quantity", extraction_text="1"),
+        ],
+    ),
+    lx.data.ExampleData(
+        text=(
+            "EN_TITLE: Renting a 12,000-liter Water Tank and Distributing It to 120 Families\n"
+            "EN_DESC: Renting a water storage tank with a capacity of 12,000 liters and distributing water to approximately 120 families living in poor areas lacking access to drinking water.\n"
+        ),
+        extractions=[
+            lx.data.Extraction(extraction_class="asset", extraction_text="Water Tank"),
+            lx.data.Extraction(extraction_class="asset_category", extraction_text="Facility / Building"),
+            lx.data.Extraction(extraction_class="asset_quantity", extraction_text="1"),
+            lx.data.Extraction(extraction_class="asset_capacity", extraction_text="12000"),
+            lx.data.Extraction(extraction_class="asset_capacity_uom", extraction_text="Liter"),
         ],
     ),
 ]
@@ -213,19 +266,24 @@ EXAMPLES = [
 # SOURCE QUERY
 # =====================================
 SOURCE_QUERY = """
-SELECT
-	cp.[index]
-	, pt.project_code
-	, cp.project_title_en
-	, cp.project_title_ar
-	, cp.project_description_en
-	, cp.project_description_ar
-	, pt.project_type
-FROM silver.cleaned_project_type pt
-LEFT JOIN silver.cleaned_project cp
-    ON cp.project_code = pt.project_code
-WHERE pt.project_type = 'New Construction'
-    OR pt.project_type = 'Repair / Maintenance'
+    SELECT
+        cp.[index]
+        , pt.project_code
+        , cp.project_title_en
+        , cp.project_title_ar
+        , cp.project_description_en
+        , cp.project_description_ar
+        , pt.project_type
+    FROM silver.cleaned_project_type pt
+    LEFT JOIN silver.cleaned_project cp
+        ON cp.project_code = pt.project_code
+    WHERE pt.project_type = 'New Construction'
+    AND NOT EXISTS (
+        SELECT 1
+        FROM silver.cleaned_project_asset_extracted pa
+        WHERE pa.project_code = pt.project_code
+    )
+    --OR pt.project_type = 'Repair / Maintenance'
 """
 
 df_input = pd.read_sql(SOURCE_QUERY, engine)
@@ -276,7 +334,7 @@ for i, row in enumerate(df_input.to_dict("records"), start=1):
             model_id="gpt-4.1-mini",
             api_key=os.environ.get("OPENAI_API_KEY"),
             fence_output=True,
-            use_schema_constraints=False,
+            use_schema_constraints=True,
         )
         cache[h] = result
         fresh_calls += 1
