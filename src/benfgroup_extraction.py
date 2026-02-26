@@ -188,8 +188,12 @@ SELECT
     project_description_en,
     project_title_ar,
     project_description_ar
-FROM silver.cleaned_project
-WHERE [index] LIKE 'BIG%'
+FROM silver.cleaned_project cp
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM silver.cleaned_project_beneficiary_group cbg
+    WHERE cbg.project_code = cp.project_code
+)
 """
 
 df_input = pd.read_sql(SOURCE_QUERY, engine)
