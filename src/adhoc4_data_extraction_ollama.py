@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config.examples.infrastructure_projects import EXAMPLES as INFRA_EXAMPLES
 from config.examples.distribution_projects import EXAMPLES as DIST_EXAMPLES
 from config.examples.service_projects import EXAMPLES as SERV_EXAMPLES
-from config.prompt import PROMPT
+from config.prompt import OLLAMA_PROMPT
 
 from utils.extraction_helpers import (
     text_hash,
@@ -28,9 +28,10 @@ from utils.extraction_helpers import (
     annotated_to_dict,
     jsonl_upsert_by_index,
     load_processed_indexes_from_jsonl,
-    jsonl_to_json_snapshot,
+    jsonl_to_json_snapshot, 
     safe_str,
     build_labeled_bilingual_input,
+    _jsonl_append
 )
 
 # -----------------------
@@ -38,6 +39,10 @@ from utils.extraction_helpers import (
 # -----------------------
 parser = argparse.ArgumentParser()
 parser.add_argument("--run-id", required=True)
+
+# Boolean flag:
+# - If provided => True
+# - If omitted  => False
 parser.add_argument(
     "--force-refresh",
     action="store_true",
@@ -59,6 +64,7 @@ processed_indexes = load_processed_indexes_from_jsonl(OUT_JSONL)
 print(f"[INFO] Already in JSONL: {len(processed_indexes)} indexes")
 print(f"[INFO] Force refresh mode: {FORCE_REFRESH}")
 
+# Cache file (stores mapping: text_hash -> AnnotatedDocument)
 CACHE_PKL = RUN_OUTPUT_DIR / f"{RUN_ID}_lx_cache.pkl"
 
 # =====================================
@@ -79,10 +85,11 @@ engine = get_sql_server_engine()
 # =====================================
 # SOURCE QUERY
 # =====================================
+# Update the source query's WHERE condition depending on which indices are to be processed
 SOURCE_QUERY = """
 SELECT *
 FROM dbo.MasterTableDenormalizedCleanedFinal
---where [index] = 'DAR-2012-083'
+WHERE [index] like '%ADFD%'
 """
 df_input = pd.read_sql(SOURCE_QUERY, engine)
 
@@ -91,16 +98,10 @@ EXAMPLES = INFRA_EXAMPLES + DIST_EXAMPLES + SERV_EXAMPLES
 # -----------------------
 # extraction loop
 # -----------------------
-CHECKPOINT_EVERY = 50
+CHECKPOINT_EVERY = 5
 
-run_cache = {}
-
-if FORCE_REFRESH:
-    disk_cache = {}
-    print("[INFO] Force refresh mode: ignoring disk cache")
-else:
-    disk_cache = load_cache(CACHE_PKL)
-    print(f"[INFO] Loaded disk cache entries: {len(disk_cache)} from {CACHE_PKL.name}")
+cache = load_cache(CACHE_PKL)
+print(f"[INFO] Loaded cache entries: {len(cache)} from {CACHE_PKL.name}")
 
 cache_hits = 0
 fresh_calls = 0
@@ -113,6 +114,7 @@ for i, row in enumerate(df_input.to_dict("records"), start=1):
     if not index:
         continue
 
+    # If NOT force refresh: skip index already written to JSONL
     if (not FORCE_REFRESH) and (index in processed_indexes):
         continue
 
@@ -128,6 +130,7 @@ for i, row in enumerate(df_input.to_dict("records"), start=1):
         desc_ar=description_ar,
     )
 
+    # Skip only if BOTH languages are empty / no content
     if not text_bilingual or not text_bilingual.strip():
         continue
 
@@ -136,38 +139,61 @@ for i, row in enumerate(df_input.to_dict("records"), start=1):
     master_project_ge_amount = row.get("GE_Amount", None)
     master_project_off_amount = row.get("OFF_Amount", None)
 
+    # Optional: add nonce for debugging to ensure upstream caching can't return identical output
+    # debug_text = text_bilingual + f"\n\nRUN_NONCE: {NONCE}"
+    # h = text_hash(debug_text)
+    # input_for_llm = debug_text
+
     h = text_hash(text_bilingual)
     input_for_llm = text_bilingual
 
-    if h in run_cache:
-        result = run_cache[h]
-        cache_hits += 1
-    elif (not FORCE_REFRESH) and (h in disk_cache):
-        result = disk_cache[h]
-        run_cache[h] = result
-        cache_hits += 1
-    else:
+    # -----------------------
+    # cache policy
+    # -----------------------
+    if FORCE_REFRESH:
+        # ALWAYS call LLM, NEVER read cache
         result = lx.extract(
-            text_or_documents=input_for_llm,
-            prompt_description=PROMPT,
+            text_or_documents=text_bilingual,
+            prompt_description=OLLAMA_PROMPT,
             examples=EXAMPLES,
-            model_id="gpt-4.1-mini",
-            api_key=os.environ.get("OPENAI_API_KEY"),
-            fence_output=True,
+            #model_id="gemma2:2b",
+            # Qwen
+            #model_id="qwen2.5:7b",
+            # llama
+            model_id="llama3.1:8b",
+            model_url="http://localhost:11434",
+            fence_output=False,
             use_schema_constraints=False,
         )
-
-        run_cache[h] = result
-        if not FORCE_REFRESH:
-            disk_cache[h] = result
-
+        cache[h] = result  # overwrite / update cache with fresh result
         fresh_calls += 1
+    else:
+        if h in cache:
+            result = cache[h]
+            cache_hits += 1
+        else:
+            result = lx.extract(
+                text_or_documents=text_bilingual,
+                prompt_description=OLLAMA_PROMPT,
+                examples=EXAMPLES,
+                #model_id="gemma2:2b",
+                # Qwen
+                #model_id="qwen2.5:7b",
+                # llama
+                model_id="llama3.1:8b",
+                model_url="http://localhost:11434",
+                fence_output=False,
+                use_schema_constraints=False,
+            )
+            cache[h] = result
+            fresh_calls += 1
 
+    # Convert result -> dict
     d = annotated_to_dict(result)
 
     out = {
         "extractions": d.get("extractions", []),
-        "text": text_bilingual,
+        "text": text_bilingual,   # keep original (no nonce)
         "index": index,
         "master_project_amount_actual": master_project_amount_actual,
         "master_project_oda_amount": master_project_oda_amount,
@@ -179,25 +205,25 @@ for i, row in enumerate(df_input.to_dict("records"), start=1):
         out["document_id"] = d.get("document_id")
 
     jsonl_upsert_by_index(OUT_JSONL, out, index_key="index")
+
     processed_this_run_indexes.add(index)
 
     if i % CHECKPOINT_EVERY == 0:
         jsonl_to_json_snapshot(OUT_JSONL, OUT_JSON)
-        if not FORCE_REFRESH:
-            save_cache(disk_cache, CACHE_PKL)
+        save_cache(cache, CACHE_PKL)
         print(
             f"[checkpoint] rows_seen={i} | upserted_this_run={len(processed_this_run_indexes)} "
-            f"| cache_hits={cache_hits} | fresh_calls={fresh_calls} | cache_size={len(disk_cache)}"
+            f"| cache_hits={cache_hits} | fresh_calls={fresh_calls} | cache_size={len(cache)}"
         )
 
+# final save
 jsonl_to_json_snapshot(OUT_JSONL, OUT_JSON)
 
-if not FORCE_REFRESH:
-    save_cache(disk_cache, CACHE_PKL)
-    print(f"Saved disk cache: {CACHE_PKL} (entries={len(disk_cache)})")
+save_cache(cache, CACHE_PKL)
 
 print(f"Saved extraction JSONL: {OUT_JSONL}")
 print(f"Saved debug JSON:      {OUT_JSON}")
+print(f"Saved cache:           {CACHE_PKL} (entries={len(cache)})")
 print(f"[DONE] upserted_this_run={len(processed_this_run_indexes)} | cache_hits={cache_hits} | fresh_calls={fresh_calls}")
 
 PROCESSED_TXT = RUN_OUTPUT_DIR / f"{RUN_ID}_processed_indexes.txt"

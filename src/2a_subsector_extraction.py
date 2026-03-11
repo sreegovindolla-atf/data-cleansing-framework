@@ -125,7 +125,7 @@ FROM
 ) a
 LEFT JOIN [dbo].[MasterTableDenormalizedCleanedFinal] b
     ON a.[index] = b.[index]
-where a.[index] = 'DAR-2012-083'
+--where a.[index] = 'DAR-2012-083'
 """
 
 df_input = pd.read_sql(SOURCE_QUERY, engine)
