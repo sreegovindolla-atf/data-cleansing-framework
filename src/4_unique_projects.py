@@ -46,8 +46,9 @@ engine = get_sql_server_engine()
 # =========================================================
 # Embedding model
 # =========================================================
-model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-mpnet-base-v2")
-
+#model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-mpnet-base-v2")
+#Use this for more accuracy
+model = "all-MiniLM-L6-v2"
 
 # =========================================================
 # Argument parser
